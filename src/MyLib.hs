@@ -1,4 +1,7 @@
-module MyLib (someFunc) where
+module MyLib
+    ( someFunc
+    ) where
 
+import           Type
 someFunc :: IO ()
-someFunc = putStrLn "someFunc"
+someFunc = e1

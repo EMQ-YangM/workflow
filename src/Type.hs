@@ -30,6 +30,7 @@ import           Data.IORef
 import qualified Data.IntMap                   as IntMap
 import           Data.IntMap                    ( IntMap )
 import           Data.Kind
+import           Data.Void
 -- import           Data.Map                       ( Map )
 -- import qualified Data.Map                      as Map
 
@@ -121,45 +122,82 @@ startThread name fun (inp, ci) = do
 
 
 data Flow a b where
-     Source ::IO a -> Flow a b -> Flow () b
+     Source ::IO a -> Flow a b -> Flow Void b
      Pipe ::(a -> IO b) -> Flow b c -> Flow a c
-     Sink ::Flow a b -> (b -> IO ()) -> Flow a ()
+     Sink ::(a -> IO ()) -> Flow a ()
 
-type Work = Flow () ()
+runFlow
+    :: ( Has
+             (State (IntMap (WorkName, ThreadId, Counter, Counter)) :+: Fresh)
+             sig
+             m
+       , MonadIO m
+       )
+    => (TChan a, Counter)
+    -> Flow a b
+    -> m ()
+runFlow (ti, ci) = \case
+    Pipe f fl -> do
+        (to, co) <- startThread "nn" f (ti, ci) -- shuold fork workManager
+        runFlow (to, co) fl
+    Source f fl -> do
+        res <- liftIO $ do
+            to <- newTChanIO
+            co <- newIORef 0
+            forkIO $ void $ forever $ do
+                v <- f
+                atomically $ writeTChan to v
+                atomicModifyIORef' co (\x -> (x + 1, ()))
+            pure (to, co)
+        runFlow res fl
+    Sink f -> do
+        liftIO $ forkIO $ void $ forever $ do
+            oc <- atomically $ readTChan ti
+            atomicModifyIORef' ci (\x -> (x - 1, ()))
+            f oc
+        pure ()
+
+type Work = Flow Void ()
+
+runWork
+    :: ( Has
+             (State (IntMap (WorkName, ThreadId, Counter, Counter)) :+: Fresh)
+             sig
+             m
+       , MonadIO m
+       )
+    => Work
+    -> m ()
+runWork work = do
+    res <- liftIO $ do
+        ti <- newTChanIO
+        ci <- newIORef 0
+        pure (ti, ci)
+    runFlow res work
+
+workRun :: Work -> IO ()
+workRun work = do
+    void
+        $ runState @(IntMap (WorkName, ThreadId, Counter, Counter)) IntMap.empty
+        $ runFresh 0
+        $ runWork work
+    threadDelay 200000000
+
+s1 :: IO Int
+s1 = do
+    putStr "input number:"
+    read <$> getLine
+
+p1 :: Int -> IO [Int]
+p1 i = do 
+    print i
+    pure (replicate i i)
+
+s2 :: [Int] -> IO ()
+s2 = print
 
 
--- runWork
---     :: ( Has (State (IntMap (WorkName, ThreadId, Counter)) :+: Fresh) sig m
---        , MonadIO m
---        )
---     => (forall a b . Flow a b -> TChan a -> m (TChan b))
--- runWork = \case
---     Source io fl -> \_ -> liftIO $ do
---         tc1 <- newTChanIO
---         forkIO $ void $ forever $ do
---             a <- io
---             atomically $ writeTChan tc1 a
---         tc2 <- newTChanIO
---         runWork fl tc1 
---         pure tc2
---     Pipe f  fl -> undefined
---     Sink fl f  -> undefined
+work1 :: Flow Void ()
+work1 = Source s1 (Pipe p1 (Sink s2))
 
-
--- runFun ::  -> IO ()
--- runFun name fun (inp, ci) = do
---     out <- newTChanIO
---     co  <- newIORef 0
---     -- runLoop inp ci out co name fun
---     undefined
-
--- t1 = runFun "t1" fun1
--- t2 = runFun "t2" fun2
-
--- fun1 :: Int -> IO [String]
--- fun1 i = replicateM i getLine
-
--- fun2 :: [String] -> IO String
--- fun2 i = pure (concat i)
-
--- data FlowType a b  = SourceType a | WorkType a b | SinkType b
+e1 = workRun work1
