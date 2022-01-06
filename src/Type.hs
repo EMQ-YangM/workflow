@@ -186,21 +186,32 @@ workRun work = do
         $ runWork work
     threadDelay 200000000
 
+fib :: [Integer]
+fib = 1 : 1 : zipWith (+) fib (tail fib)
+
+getLength :: Integer -> Int
+getLength i = length (show i)
+
 s1 :: IO Int
 s1 = do
     putStr "input number:"
     read <$> getLine
 
-p1 :: Int -> IO [Int]
+p1 :: Int -> IO [Integer]
 p1 i = do
     print i
-    pure (replicate i i)
+    pure (take i fib)
+
+p2 :: [Integer] -> IO [Int]
+p2 ls = do 
+    print ls
+    pure (fmap getLength ls)
 
 s2 :: [Int] -> IO ()
 s2 = print
 
 
 work1 :: Flow Void ()
-work1 = Source s1 (Pipe p1 (Sink s2))
+work1 = Source s1 (Pipe p1 (Pipe p2 (Sink s2)))
 
 e1 = workRun work1
