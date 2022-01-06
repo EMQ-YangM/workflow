@@ -35,24 +35,24 @@ import           Data.Void
 -- import qualified Data.Map                      as Map
 
 
-data WrokState :: Type -> Type -> (Type -> Type) -> Type -> Type where
-    GetInput ::WrokState input output m input
-    PutOutput ::output -> WrokState input output m ()
+data WorkAction :: Type -> Type -> (Type -> Type) -> Type -> Type where
+    GetInput ::WorkAction input output m input
+    PutOutput ::output -> WorkAction input output m ()
 
-getInput :: HasLabelled WrokState (WrokState input output) sig m => m input
-getInput = sendLabelled @WrokState GetInput
+getInput :: HasLabelled WorkAction (WorkAction input output) sig m => m input
+getInput = sendLabelled @WorkAction GetInput
 
 putOutput
-    :: HasLabelled WrokState (WrokState input output) sig m => output -> m ()
-putOutput output = sendLabelled @WrokState (PutOutput output)
+    :: HasLabelled WorkAction (WorkAction input output) sig m => output -> m ()
+putOutput output = sendLabelled @WorkAction (PutOutput output)
 
 type Counter = IORef Int
 
-newtype WrokStateC input output m a = WrokStateC {unWrokStateC :: ReaderC (TChan input, Counter, TChan output, Counter) m a}
+newtype WorkActionC input output m a = WorkActionC {unWorkActionC :: ReaderC (TChan input, Counter, TChan output, Counter) m a}
     deriving (Functor, Applicative, Monad, MonadIO)
 
-instance (Algebra sig m, MonadIO m) => Algebra (WrokState input output :+: sig) (WrokStateC input output m) where
-    alg hdl sig ctx = WrokStateC $ ReaderC $ \(input, ic, output, oc) ->
+instance (Algebra sig m, MonadIO m) => Algebra (WorkAction input output :+: sig) (WorkActionC input output m) where
+    alg hdl sig ctx = WorkActionC $ ReaderC $ \(input, ic, output, oc) ->
         case sig of
             L GetInput -> do
                 v <- liftIO $ do
@@ -66,20 +66,20 @@ instance (Algebra sig m, MonadIO m) => Algebra (WrokState input output :+: sig) 
                     atomicModifyIORef oc (\x -> (x + 1, ()))
                 pure ctx
             R signa -> alg
-                (runReader (input, ic, output, oc) . unWrokStateC . hdl)
+                (runReader (input, ic, output, oc) . unWorkActionC . hdl)
                 signa
                 ctx
 
 
-runWrokStateC
+runWorkActionC
     :: TChan input
     -> Counter
     -> TChan output
     -> Counter
-    -> Labelled WrokState (WrokStateC input output) m a
+    -> Labelled WorkAction (WorkActionC input output) m a
     -> m a
-runWrokStateC inp ci out co f =
-    runReader (inp, ci, out, co) $ unWrokStateC $ runLabelled f
+runWorkActionC inp ci out co f =
+    runReader (inp, ci, out, co) $ unWorkActionC $ runLabelled f
 
 type WorkName = String
 
@@ -89,7 +89,7 @@ data ValurOrCommand v
     deriving (Show, Eq)
 
 loop
-    :: (HasLabelled WrokState (WrokState input output) sig m, MonadIO m)
+    :: (HasLabelled WorkAction (WorkAction input output) sig m, MonadIO m)
     => WorkName
     -> (input -> IO output)
     -> m ()
@@ -116,7 +116,7 @@ startThread
 startThread name fun (inp, ci) = do
     out  <- liftIO newTChanIO
     co   <- liftIO $ newIORef 0
-    thid <- liftIO $ forkIO $ void $ runWrokStateC inp ci out co $ loop
+    thid <- liftIO $ forkIO $ void $ runWorkActionC inp ci out co $ loop
         name
         fun
     number <- fresh
