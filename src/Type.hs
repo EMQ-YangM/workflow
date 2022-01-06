@@ -145,9 +145,12 @@ runFlow (ti, ci) = \case
             to <- newTChanIO
             co <- newIORef 0
             forkIO $ void $ forever $ do
-                v <- f
-                atomically $ writeTChan to v
-                atomicModifyIORef' co (\x -> (x + 1, ()))
+                v' <- try @SomeException f
+                case v' of
+                    Left  se -> writeFile "source" (show se)
+                    Right v  -> do
+                        atomically $ writeTChan to v
+                        atomicModifyIORef' co (\x -> (x + 1, ()))
             pure (to, co)
         runFlow res fl
     Sink f -> do
@@ -189,7 +192,7 @@ s1 = do
     read <$> getLine
 
 p1 :: Int -> IO [Int]
-p1 i = do 
+p1 i = do
     print i
     pure (replicate i i)
 
