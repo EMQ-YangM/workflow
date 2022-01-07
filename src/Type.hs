@@ -36,92 +36,76 @@ import qualified Data.IntMap                   as IntMap
 import           Data.IntMap                    ( IntMap )
 import           Data.Kind
 import           Data.Void
-import           Optics
+import           Optics                         ( (^.)
+                                                , makeLenses
+                                                )
 import           System.Random
 -- import           Data.Map                       ( Map )
 -- import qualified Data.Map                      as Map
 
 
-data WorkAction :: Type -> Type -> (Type -> Type) -> Type -> Type where
-    GetInput ::WorkAction input output m input
-    PutOutput ::output -> WorkAction input output m ()
-    GetCommand ::WorkAction input output m Command
+-- data WorkAction :: Type -> Type -> (Type -> Type) -> Type -> Type where
+--     GetInput ::WorkAction input output m input
+--     PutOutput ::output -> WorkAction input output m ()
+--     GetCommand ::WorkAction input output m Command
 
-getInput :: HasLabelled WorkAction (WorkAction input output) sig m => m input
-getInput = sendLabelled @WorkAction GetInput
+-- getInput :: HasLabelled WorkAction (WorkAction input output) sig m => m input
+-- getInput = sendLabelled @WorkAction GetInput
 
-putOutput
-    :: HasLabelled WorkAction (WorkAction input output) sig m => output -> m ()
-putOutput output = sendLabelled @WorkAction (PutOutput output)
+-- putOutput
+--     :: HasLabelled WorkAction (WorkAction input output) sig m => output -> m ()
+-- putOutput output = sendLabelled @WorkAction (PutOutput output)
 
-getCommand
-    :: HasLabelled WorkAction (WorkAction input output) sig m => m Command
-getCommand = sendLabelled @WorkAction GetCommand
+-- getCommand
+--     :: HasLabelled WorkAction (WorkAction input output) sig m => m Command
+-- getCommand = sendLabelled @WorkAction GetCommand
 
 type Counter = IORef Int
 
 data Command = NoCommand | StopWork
 
-data WorkState input output = WorkState
-    { inputChan         :: TChan input
-    , inputChanCounter  :: Counter
-    , outputChan        :: TChan output
-    , outputChanCounter :: Counter
-    , commandRef        :: IORef Command
+data WorkEnv input output = WorkEnv
+    { _inputChan         :: TChan input
+    , _inputChanCounter  :: Counter
+    , _outputChan        :: TChan output
+    , _outputChanCounter :: Counter
+    , _commandRef        :: IORef Command
     }
 
-newtype WorkActionC input output m a = WorkActionC {unWorkActionC :: ReaderC (WorkState input output) m a}
-    deriving (Functor, Applicative, Monad, MonadIO)
-
-instance (Algebra sig m, MonadIO m) => Algebra (WorkAction input output :+: sig) (WorkActionC input output m) where
-    alg hdl sig ctx = WorkActionC $ ReaderC $ \ws@WorkState {..} -> case sig of
-        L GetInput -> do
-            v <- liftIO $ do
-                rv <- atomically $ readTChan inputChan
-                atomicModifyIORef' inputChanCounter (\x -> (x - 1, ()))
-                pure rv
-            pure (v <$ ctx)
-        L (PutOutput o) -> do
-            liftIO $ do
-                atomically $ writeTChan outputChan o
-                atomicModifyIORef outputChanCounter (\x -> (x + 1, ()))
-            pure ctx
-        L GetCommand -> do
-            v <- liftIO $ readIORef commandRef
-            pure (v <$ ctx)
-        R signa -> alg (runReader ws . unWorkActionC . hdl) signa ctx
-
-
-runWorkActionC
-    :: WorkState input output
-    -> Labelled WorkAction (WorkActionC input output) m a
-    -> m a
-runWorkActionC ws f = runReader ws $ unWorkActionC $ runLabelled f
+makeLenses ''WorkEnv
 
 type WorkName = String
 
 data WorkError = WorkStop
 
 workloop
-    :: ( HasLabelled WorkAction (WorkAction input output) sig m
-       , Has (Error WorkError) sig m
+    :: forall input output sig m
+     . ( Has (Reader (WorkEnv input output) :+: Error WorkError) sig m
        , MonadIO m
        )
     => WorkName
     -> (input -> IO output)
     -> m ()
 workloop workName fun = forever $ do
-    comm <- getCommand
+    crf  <- view @(WorkEnv input output) commandRef
+    comm <- liftIO $ readIORef crf
     case comm of
         StopWork  -> throwError WorkStop
         NoCommand -> do
-            input <- getInput
-            val   <- liftIO $ try @SomeException $ fun input
+            tic   <- view @(WorkEnv input output) inputChan
+            input <- liftIO $ atomically $ readTChan tic
+            ic    <- view @(WorkEnv input output) inputChanCounter
+            liftIO $ atomicModifyIORef' ic (\x -> (x - 1, ()))
+            val <- liftIO $ try @SomeException $ fun input
             case val of
                 Left se -> do  -- handle error
                     let name = workName
                     liftIO $ appendFile name (show se)
-                Right output -> putOutput output
+                Right output -> do
+                    toc <- view @(WorkEnv input output) outputChan
+                    liftIO $ atomically $ writeTChan toc output
+                    oc <- view @(WorkEnv input output) outputChanCounter
+                    liftIO $ atomicModifyIORef' oc (\x -> (x + 1, ()))
 
 data WorkRecord = WorkRecord
     { workId      :: Int
@@ -176,7 +160,13 @@ manage f inputChan inputChanCounter outputChan outputChanCounter = forever $ do
                 liftIO
                 $ forkIO
                 $ void
-                $ runWorkActionC (WorkState { .. })
+                $ runReader
+                      (WorkEnv inputChan
+                               inputChanCounter
+                               outputChan
+                               outputChanCounter
+                               commandRef
+                      )
                 $ runError @WorkError
                 $ workloop (show number) f
             modify
@@ -254,9 +244,10 @@ workRun :: Work -> IO ()
 workRun work = do
     (mms, ()) <- runState (ManManState [] []) $ runWork work
     forever $ do
-        for_ (mms ^. allCounter) $ \counter -> do
+        for_  (zip [1..] $ mms ^. allCounter) $ \(idx,counter) -> do
             v <- readIORef counter
-            print v
+            print (idx, v)
+            putStrLn "--------------------"
         threadDelay 100000
 
 fib :: [Integer]
@@ -267,11 +258,12 @@ getLength i = length (show i)
 
 s1 :: IO Int
 s1 = do
-    threadDelay 1000000
+    threadDelay 10000
     randomRIO (10, 30)
 
 p1 :: Int -> IO [Integer]
 p1 i = do
+    threadDelay 2000000
     print i
     pure (take i fib)
 
