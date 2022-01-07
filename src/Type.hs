@@ -40,6 +40,7 @@ import           Optics                         ( (^.)
                                                 , makeLenses
                                                 )
 import           System.Random
+import Data.Traversable (for)
 -- import           Data.Map                       ( Map )
 -- import qualified Data.Map                      as Map
 
@@ -128,6 +129,8 @@ data Action = ForkAWorker | KillAWorker | NoOperate
 
 dynamciForkWork :: Int -> Int -> Int -> Action
 dynamciForkWork inc out wroks | wroks == 0 = ForkAWorker
+                              | inc - out > 20 = ForkAWorker
+                              | out - inc > 20 = KillAWorker
                               | otherwise  = NoOperate
 
 manage
@@ -207,7 +210,7 @@ runFlow (ti, ci) = \case
             $ runReader (WorkManEnv ci co)
             $ runFresh 0
             $ manage f ti ci to co
-        allCounter %= (co :)
+        allCounter %= (ci :)
         manThid %= (thid :)
         runFlow (to, co) fl
     Source f fl -> do
@@ -244,10 +247,10 @@ workRun :: Work -> IO ()
 workRun work = do
     (mms, ()) <- runState (ManManState [] []) $ runWork work
     forever $ do
-        for_  (zip [1..] $ mms ^. allCounter) $ \(idx,counter) -> do
+        res <- for  (zip [1..] $ mms ^. allCounter) $ \(idx,counter) -> do
             v <- readIORef counter
-            print (idx, v)
-            putStrLn "--------------------"
+            pure (idx, v)
+        -- print res
         threadDelay 100000
 
 fib :: [Integer]
@@ -258,7 +261,7 @@ getLength i = length (show i)
 
 s1 :: IO Int
 s1 = do
-    threadDelay 10000
+    threadDelay 100000
     randomRIO (10, 30)
 
 p1 :: Int -> IO [Integer]
