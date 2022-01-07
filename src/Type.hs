@@ -119,10 +119,6 @@ newtype WorkManState = WorkManState
     { allWorks :: IntMap WorkRecord
     }
 
-data WorkManEnv = WorkManEnv
-    { inpoutCounter :: Counter
-    , outputCounter :: Counter
-    }
 
 data Action = ForkAWorker | KillAWorker | NoOperate
   deriving (Show, Eq)
@@ -134,7 +130,7 @@ dynamciForkWork inc out wroks | wroks == 0 = ForkAWorker
                               | otherwise  = NoOperate
 
 manage
-    :: ( Has (State WorkManState :+: Reader WorkManEnv :+: Fresh) sig m
+    :: ( Has (State WorkManState :+: Fresh) sig m
        , MonadIO m
        )
     => (input -> IO output)
@@ -207,7 +203,6 @@ runFlow (ti, ci) = \case
             $ forkIO
             $ void
             $ runState @WorkManState (WorkManState IntMap.empty)
-            $ runReader (WorkManEnv ci co)
             $ runFresh 0
             $ manage f ti ci to co
         allCounter %= (ci :)
