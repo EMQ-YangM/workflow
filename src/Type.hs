@@ -35,31 +35,13 @@ import           Data.IORef
 import qualified Data.IntMap                   as IntMap
 import           Data.IntMap                    ( IntMap )
 import           Data.Kind
+import           Data.Traversable               ( for )
 import           Data.Void
 import           Optics                         ( (^.)
                                                 , makeLenses
                                                 )
 import           System.Random
-import Data.Traversable (for)
--- import           Data.Map                       ( Map )
--- import qualified Data.Map                      as Map
-
-
--- data WorkAction :: Type -> Type -> (Type -> Type) -> Type -> Type where
---     GetInput ::WorkAction input output m input
---     PutOutput ::output -> WorkAction input output m ()
---     GetCommand ::WorkAction input output m Command
-
--- getInput :: HasLabelled WorkAction (WorkAction input output) sig m => m input
--- getInput = sendLabelled @WorkAction GetInput
-
--- putOutput
---     :: HasLabelled WorkAction (WorkAction input output) sig m => output -> m ()
--- putOutput output = sendLabelled @WorkAction (PutOutput output)
-
--- getCommand
---     :: HasLabelled WorkAction (WorkAction input output) sig m => m Command
--- getCommand = sendLabelled @WorkAction GetCommand
+import           System.Timeout                 ( timeout )
 
 type Counter = IORef Int
 
@@ -124,58 +106,59 @@ data Action = ForkAWorker | KillAWorker | NoOperate
   deriving (Show, Eq)
 
 dynamciForkWork :: Int -> Int -> Int -> Action
-dynamciForkWork inc out wroks | wroks == 0 = ForkAWorker
+dynamciForkWork inc out wroks | wroks == 0     = ForkAWorker
                               | inc - out > 20 = ForkAWorker
                               | out - inc > 20 = KillAWorker
-                              | otherwise  = NoOperate
+                              | otherwise      = NoOperate
 
 manage
-    :: ( Has (State WorkManState :+: Fresh) sig m
-       , MonadIO m
-       )
+    :: (Has (State WorkManState :+: Fresh) sig m, MonadIO m)
     => (input -> IO output)
     -> TChan input
     -> Counter
     -> TChan output
     -> Counter
+    -> Counter
     -> m ()
-manage f inputChan inputChanCounter outputChan outputChanCounter = forever $ do
-    inc   <- liftIO $ readIORef inputChanCounter
-    out   <- liftIO $ readIORef outputChanCounter
-    works <- gets (IntMap.size . allWorks)
-    case dynamciForkWork inc out works of
-        NoOperate   -> pure ()
-        KillAWorker -> do
-            aRandomIndex                       <- liftIO $ randomRIO (0, works)
-            WorkRecord { workId, workCommand } <- gets
-                ((IntMap.! aRandomIndex) . allWorks)
-            liftIO $ writeIORef workCommand StopWork
-            modify @WorkManState
-                (WorkManState . IntMap.delete workId . allWorks)
-        ForkAWorker -> do
-            number     <- fresh
-            commandRef <- liftIO $ newIORef NoCommand
-            thid       <-
-                liftIO
-                $ forkIO
-                $ void
-                $ runReader
-                      (WorkEnv inputChan
-                               inputChanCounter
-                               outputChan
-                               outputChanCounter
-                               commandRef
-                      )
-                $ runError @WorkError
-                $ workloop (show number) f
-            modify
-                ( WorkManState
-                . IntMap.insert
-                      number
-                      (WorkRecord number "nameless" commandRef thid)
-                . allWorks
-                )
-    liftIO $ threadDelay 1000000
+manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
+    = forever $ do
+        inc   <- liftIO $ readIORef inputChanCounter
+        out   <- liftIO $ readIORef outputChanCounter
+        works <- gets (IntMap.size . allWorks)
+        liftIO $ writeIORef threadCounter works
+        case dynamciForkWork inc out works of
+            NoOperate   -> pure ()
+            KillAWorker -> do
+                aRandomIndex <- liftIO $ randomRIO (0, works)
+                WorkRecord { workId, workCommand } <- gets
+                    ((IntMap.! aRandomIndex) . allWorks)
+                liftIO $ writeIORef workCommand StopWork
+                modify @WorkManState
+                    (WorkManState . IntMap.delete workId . allWorks)
+            ForkAWorker -> do
+                number     <- fresh
+                commandRef <- liftIO $ newIORef NoCommand
+                thid       <-
+                    liftIO
+                    $ forkIO
+                    $ void
+                    $ runReader
+                          (WorkEnv inputChan
+                                   inputChanCounter
+                                   outputChan
+                                   outputChanCounter
+                                   commandRef
+                          )
+                    $ runError @WorkError
+                    $ workloop (show number) f
+                modify
+                    ( WorkManState
+                    . IntMap.insert
+                          number
+                          (WorkRecord number "nameless" commandRef thid)
+                    . allWorks
+                    )
+        liftIO $ threadDelay 1000000
 
 
 data Flow a b where
@@ -184,8 +167,9 @@ data Flow a b where
      Sink ::(a -> IO ()) -> Flow a ()
 
 data ManManState = ManManState
-    { _allCounter :: [Counter]
-    , _manThid    :: [ThreadId]
+    { _allCounter    :: [Counter]
+    , _manThid       :: [ThreadId]
+    , _threadCounter :: [Counter]
     }
 makeLenses ''ManManState
 
@@ -198,15 +182,17 @@ runFlow (ti, ci) = \case
     Pipe f fl -> do
         to   <- liftIO newTChanIO
         co   <- liftIO $ newIORef 0
+        td   <- liftIO $ newIORef 0
         thid <-
             liftIO
             $ forkIO
             $ void
             $ runState @WorkManState (WorkManState IntMap.empty)
             $ runFresh 0
-            $ manage f ti ci to co
+            $ manage f ti ci to co td
         allCounter %= (ci :)
         manThid %= (thid :)
+        threadCounter %= (td :)
         runFlow (to, co) fl
     Source f fl -> do
         res <- liftIO $ do
@@ -240,12 +226,12 @@ runWork work = do
 
 workRun :: Work -> IO ()
 workRun work = do
-    (mms, ()) <- runState (ManManState [] []) $ runWork work
+    (mms, ()) <- runState (ManManState [] [] []) $ runWork work
     forever $ do
-        res <- for  (zip [1..] $ mms ^. allCounter) $ \(idx,counter) -> do
+        res <- for (zip [1 ..] $ mms ^. threadCounter) $ \(idx, counter) -> do
             v <- readIORef counter
             pure (idx, v)
-        -- print res
+        print res
         threadDelay 100000
 
 fib :: [Integer]
@@ -279,3 +265,29 @@ work1 :: Flow Void ()
 work1 = Source s1 (Pipe p1 (Pipe p2 (Sink s2)))
 
 e1 = workRun work1
+
+data ThreadCall message result = Call message (TMVar result) | Cast message
+
+type ThreadChan message result = TChan (ThreadCall message result)
+
+type Pid = Int
+
+call
+    :: Pid
+    -> message
+    -> Int
+    -> IntMap (ThreadChan message result)
+    -> IO (Maybe result)
+call pid message tt tm = do
+    tmv <- newEmptyTMVarIO
+    let tc = Call message tmv
+    case IntMap.lookup pid tm of
+        Nothing  -> error "????"
+        Just tc' -> do
+            atomically $ writeTChan tc' tc
+            timeout tt $ atomically $ readTMVar tmv
+
+
+handle :: ThreadCall message reuslt -> IO ()
+handle (Call messge tmv) = undefined
+handle (Cast message   ) = undefined
