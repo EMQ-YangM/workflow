@@ -106,8 +106,7 @@ data Action = ForkAWorker | KillAWorker | NoOperate
   deriving (Show, Eq)
 
 dynamciForkWork :: Int -> Int -> Int -> Action
-dynamciForkWork inc out works | works == 0           = ForkAWorker
-                              | inc == 0 && out == 0 = KillAWorker
+dynamciForkWork inc out works | inc == 0 && out == 0 = KillAWorker
                               | inc - out > 20       = ForkAWorker
                               | out - inc > 20       = KillAWorker
                               | otherwise            = NoOperate
@@ -131,9 +130,12 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
             NoOperate   -> pure ()
             KillAWorker -> do
                 im <- gets allWorks
-                let ((k, a), im') = IntMap.deleteFindMin im
-                liftIO $ writeIORef (workCommand a) StopWork
-                put (WorkManState im')
+                if IntMap.null im
+                    then pure ()
+                    else do
+                        let ((k, a), im') = IntMap.deleteFindMin im
+                        liftIO $ writeIORef (workCommand a) StopWork
+                        put (WorkManState im')
             ForkAWorker -> do
                 number     <- fresh
                 commandRef <- liftIO $ newIORef NoCommand
