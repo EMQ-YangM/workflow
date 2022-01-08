@@ -106,10 +106,11 @@ data Action = ForkAWorker | KillAWorker | NoOperate
   deriving (Show, Eq)
 
 dynamciForkWork :: Int -> Int -> Int -> Action
-dynamciForkWork inc out wroks | wroks == 0     = ForkAWorker
-                              | inc - out > 20 = ForkAWorker
-                              | out - inc > 20 = KillAWorker
-                              | otherwise      = NoOperate
+dynamciForkWork inc out works | works == 0           = ForkAWorker
+                              | inc == 0 && out == 0 = KillAWorker
+                              | inc - out > 20       = ForkAWorker
+                              | out - inc > 20       = KillAWorker
+                              | otherwise            = NoOperate
 
 manage
     :: (Has (State WorkManState :+: Fresh) sig m, MonadIO m)
@@ -129,12 +130,10 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
         case dynamciForkWork inc out works of
             NoOperate   -> pure ()
             KillAWorker -> do
-                aRandomIndex <- liftIO $ randomRIO (0, works)
-                WorkRecord { workId, workCommand } <- gets
-                    ((IntMap.! aRandomIndex) . allWorks)
-                liftIO $ writeIORef workCommand StopWork
-                modify @WorkManState
-                    (WorkManState . IntMap.delete workId . allWorks)
+                im <- gets allWorks
+                let ((k, a), im') = IntMap.deleteFindMin im
+                liftIO $ writeIORef (workCommand a) StopWork
+                put (WorkManState im')
             ForkAWorker -> do
                 number     <- fresh
                 commandRef <- liftIO $ newIORef NoCommand
@@ -158,7 +157,7 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
                           (WorkRecord number "nameless" commandRef thid)
                     . allWorks
                     )
-        liftIO $ threadDelay 1000000
+        liftIO $ threadDelay 300000
 
 
 data Flow a b where
@@ -208,6 +207,9 @@ runFlow (ti, ci) = \case
             pure (to, co)
         runFlow res fl
     Sink f -> do
+        stk <- liftIO $ newIORef 0
+        allCounter %= (ci :)
+        threadCounter %= (stk :)
         liftIO $ forkIO $ void $ forever $ do
             oc <- atomically $ readTChan ti
             atomicModifyIORef' ci (\x -> (x - 1, ()))
@@ -228,9 +230,12 @@ workRun :: Work -> IO ()
 workRun work = do
     (mms, ()) <- runState (ManManState [] [] []) $ runWork work
     forever $ do
-        res <- for (zip [1 ..] $ mms ^. threadCounter) $ \(idx, counter) -> do
-            v <- readIORef counter
-            pure (idx, v)
+        res <-
+            for (zip3 [1 ..] (mms ^. threadCounter) (mms ^. allCounter))
+                $ \(idx, tc, td) -> do
+                      v  <- readIORef tc
+                      v' <- readIORef td
+                      pure (idx, v, v')
         print res
         threadDelay 100000
 
@@ -242,27 +247,41 @@ getLength i = length (show i)
 
 s1 :: IO Int
 s1 = do
-    threadDelay 100000
+    threadDelay 10000
     randomRIO (10, 30)
 
 p1 :: Int -> IO [Integer]
 p1 i = do
     threadDelay 2000000
-    print i
+    -- print i
     pure (take i fib)
 
 p2 :: [Integer] -> IO [Int]
 p2 ls = do
-    threadDelay 3000000
-    print ls
+    threadDelay 4000000
+    -- print ls
     pure (fmap getLength ls)
+
+p3 :: [Int] -> IO [Int]
+p3 x = do
+    threadDelay 8000000
+    pure (fmap (+ 1) x)
 
 s2 :: [Int] -> IO ()
 s2 _ = pure ()
 
 
 work1 :: Flow Void ()
-work1 = Source s1 (Pipe p1 (Pipe p2 (Sink s2)))
+work1 = Source
+    s1
+    (Pipe
+        p1
+        (Pipe
+            p2
+            (Pipe p3 $ Pipe p3 $ Pipe p3 $ Pipe p3 $ Pipe p3 $ Pipe p3 $ Sink s2
+            )
+        )
+    )
 
 e1 = workRun work1
 
@@ -296,7 +315,7 @@ data Metric = Metric
 
 data SV :: [Type] -> Type where
     SE ::SV '[]
-    SA :: IORef a -> IntMap (SV b) -> SV (a ': b)
+    SA ::a -> IntMap (SV b) -> SV (a ': b)
 
 data V1 = V1
     { v1v1 :: Int

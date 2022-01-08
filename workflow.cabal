@@ -54,6 +54,7 @@ executable workflow
 
     hs-source-dirs:   app
     default-language: Haskell2010
+    ghc-options: -threaded
 
 test-suite workflow-test
     default-language: Haskell2010
