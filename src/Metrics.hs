@@ -97,20 +97,23 @@ instance (Algebra sig m, MonadIO m, Default v) => Algebra (Metric v :+: sig ) (M
             pure ctx
         R signa -> alg (runReader iov . unMetric . hdl) signa ctx
 
-runMetric :: forall v m a . (MonadIO m) => MetriC v m a -> m (IOVector Int, a)
+runMetric :: forall v m a . (MonadIO m) => MetriC v m a -> m a
 runMetric f = do
     iov <- liftIO $ replicate (vlength @v undefined) 0
-    a   <- runReader iov $ unMetric f
-    pure (iov, a)
+    runReader iov $ unMetric f
+
+runMetricWith
+    :: forall v m a . (MonadIO m) => IOVector Int -> MetriC v m a -> m a
+runMetricWith iov f = runReader iov $ unMetric f
 
 data V = V
-    { timer     :: K "0"
-    , sleeper   :: K "1"
-    , counter   :: K "2"
+    { timer   :: K "0"
+    , sleeper :: K "1"
+    , counter :: K "2"
     }
 
 instance Default V where
-    def = V K K K 
+    def = V K K K
 
 instance Vlength a where
     vlength _ = 3
@@ -124,5 +127,4 @@ v1 = do
 -- >>> r1
 -- 31
 r1 :: IO Int
-r1 = do
-    snd <$> runMetric @V v1
+r1 = runMetric @V v1
