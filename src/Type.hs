@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -30,6 +29,7 @@ import           Control.Effect.Optics
 import           Control.Exception
 import           Control.Monad
 import           Control.Monad.IO.Class
+import           Data.Default.Class
 import           Data.Foldable
 import           Data.IORef
 import qualified Data.IntMap                   as IntMap
@@ -37,6 +37,7 @@ import           Data.IntMap                    ( IntMap )
 import           Data.Kind
 import           Data.Traversable               ( for )
 import           Data.Void
+import           Metrics
 import           Optics                         ( (^.)
                                                 , makeLenses
                                                 )
@@ -61,9 +62,25 @@ type WorkName = String
 
 data WorkError = WorkStop
 
+data WorkMetric = WorkMetric
+    { mincCounter   :: K "0"
+    , moutCounter   :: K "1"
+    , merrorCounter :: K "2"
+    }
+
+instance Default WorkMetric where
+    def = WorkMetric K K K
+
+instance Vlength WorkMetric where
+    vlength _ = 3
+
 workloop
     :: forall input output sig m
-     . ( Has (Reader (WorkEnv input output) :+: Error WorkError) sig m
+     . ( Has
+             ( Reader (WorkEnv input output) :+: Metric WorkMetric :+: Error WorkError
+             )
+             sig
+             m
        , MonadIO m
        )
     => WorkName
@@ -77,18 +94,25 @@ workloop workName fun = forever $ do
         NoCommand -> do
             tic   <- view @(WorkEnv input output) inputChan
             input <- liftIO $ atomically $ readTChan tic
-            ic    <- view @(WorkEnv input output) inputChanCounter
+            addOne mincCounter
+
+            ic <- view @(WorkEnv input output) inputChanCounter
             liftIO $ atomicModifyIORef' ic (\x -> (x - 1, ()))
+
             val <- liftIO $ try @SomeException $ fun input
             case val of
                 Left se -> do  -- handle error
                     let name = workName
+                    addOne merrorCounter
                     liftIO $ appendFile name (show se)
+                    
                 Right output -> do
                     toc <- view @(WorkEnv input output) outputChan
                     liftIO $ atomically $ writeTChan toc output
+
                     oc <- view @(WorkEnv input output) outputChanCounter
                     liftIO $ atomicModifyIORef' oc (\x -> (x + 1, ()))
+                    addOne moutCounter
 
 data WorkRecord = WorkRecord
     { workId      :: Int
@@ -150,6 +174,7 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
                                    outputChanCounter
                                    commandRef
                           )
+                    $ runMetric @WorkMetric
                     $ runError @WorkError
                     $ workloop (show number) f
                 modify
