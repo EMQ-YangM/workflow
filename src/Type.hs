@@ -105,7 +105,7 @@ workloop workName fun = forever $ do
                     let name = workName
                     addOne merrorCounter
                     liftIO $ appendFile name (show se)
-                    
+
                 Right output -> do
                     toc <- view @(WorkEnv input output) outputChan
                     liftIO $ atomically $ writeTChan toc output
@@ -311,57 +311,3 @@ work1 = Source
     )
 
 e1 = workRun work1
-
-data ThreadCall message result = Call message (TMVar result) | Cast message
-
-type ThreadChan message result = TChan (ThreadCall message result)
-
-type Pid = Int
-
-call
-    :: Pid
-    -> message
-    -> Int
-    -> IntMap (ThreadChan message result)
-    -> IO (Maybe result)
-call pid message tt tm = do
-    tmv <- newEmptyTMVarIO
-    let tc = Call message tmv
-    case IntMap.lookup pid tm of
-        Nothing  -> error "????"
-        Just tc' -> do
-            atomically $ writeTChan tc' tc
-            timeout tt $ atomically $ readTMVar tmv
-
-
-handle :: ThreadCall message reuslt -> IO ()
-handle (Call messge tmv) = undefined
-handle (Cast message   ) = undefined
-
-data Metric = Metric
-
-data SV :: [Type] -> Type where
-    SE ::SV '[]
-    SA ::a -> IntMap (SV b) -> SV (a ': b)
-
-data V1 = V1
-    { v1v1 :: Int
-    , v1v2 :: Bool
-    }
-
-data V2 = V2
-    { v2v1 :: Int
-    , v2v2 :: Bool
-    }
-
--- sva :: SV '[V1 , V2]
--- sva = SA (V1 10 True)
---          (IntMap.singleton 0 (SA (V2 20 False) (IntMap.singleton 0 SE)))
-
--- unSV :: SV (x ': xs) -> SV xs
--- unSV (SA a b) = b
-
--- fstSV :: SV (x ': xs) -> IntMap x
--- fstSV (SA a b) = a
-
--- t1 = fstSV $ unSV sva
