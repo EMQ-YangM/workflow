@@ -127,8 +127,12 @@ dynamciForkWork inc out works | inc == 0 && out == 0 = KillAWorker
                               | out - inc > 20       = KillAWorker
                               | otherwise            = NoOperate
 
+makeMetrics "ManMetric" ["mm_allworks", "mm_forkworks", "mm_killedworks"]
+
 manage
-    :: (Has (State WorkManState :+: Fresh) sig m, MonadIO m)
+    :: ( Has (State WorkManState :+: Fresh :+: Metric ManMetric) sig m
+       , MonadIO m
+       )
     => (input -> IO output)
     -> TChan input
     -> Counter
@@ -142,9 +146,17 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
         out   <- liftIO $ readIORef outputChanCounter
         works <- gets (IntMap.size . allWorks)
         liftIO $ writeIORef threadCounter works
+
+        allworks <- getVal mm_forkworks
+        liftIO $ putStrLn $ "forkedworks ... " ++ show allworks
+
         case dynamciForkWork inc out works of
             NoOperate   -> pure ()
             KillAWorker -> do
+
+                addOne mm_killedworks
+                subOne mm_allworks
+
                 im <- gets allWorks
                 if IntMap.null im
                     then pure ()
@@ -153,6 +165,10 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
                         liftIO $ writeIORef (workCommand a) StopWork
                         put (WorkManState im')
             ForkAWorker -> do
+
+                addOne mm_forkworks
+                addOne mm_allworks
+
                 number     <- fresh
                 commandRef <- liftIO $ newIORef NoCommand
                 vec        <- liftIO $ creatVec @WorkMetric
@@ -192,8 +208,10 @@ data ManManState = ManManState
     }
 makeLenses ''ManManState
 
+makeMetrics "ManManMetric" ["mmm_allmanager"]
+
 runFlow
-    :: (Has (State ManManState) sig m, MonadIO m)
+    :: (Has (State ManManState :+: Metric ManManMetric) sig m, MonadIO m)
     => (TChan a, Counter)
     -> Flow a b
     -> m ()
@@ -208,15 +226,19 @@ runFlow (ti, ci) = \case
             $ void
             $ runState @WorkManState (WorkManState IntMap.empty)
             $ runFresh 0
+            $ runMetric @ManMetric
             $ manage f ti ci to co td
+        addOne mmm_allmanager
         allCounter %= (ci :)
         manThid %= (thid :)
         threadCounter %= (td :)
         runFlow (to, co) fl
     Source f fl -> do
+        addOne mmm_allmanager
         res <- liftIO $ do
             to <- newTChanIO
             co <- newIORef 0
+
             forkIO $ void $ forever $ do
                 v' <- try @SomeException f
                 case v' of
@@ -230,6 +252,7 @@ runFlow (ti, ci) = \case
         stk <- liftIO $ newIORef 0
         allCounter %= (ci :)
         threadCounter %= (stk :)
+        addOne mmm_allmanager
         liftIO $ forkIO $ void $ forever $ do
             oc <- atomically $ readTChan ti
             atomicModifyIORef' ci (\x -> (x - 1, ()))
@@ -238,7 +261,10 @@ runFlow (ti, ci) = \case
 
 type Work = Flow Void ()
 
-runWork :: (Has (State ManManState) sig m, MonadIO m) => Work -> m ()
+runWork
+    :: (Has (State ManManState :+: Metric ManManMetric) sig m, MonadIO m)
+    => Work
+    -> m ()
 runWork work = do
     res <- liftIO $ do
         ti <- newTChanIO
@@ -248,7 +274,8 @@ runWork work = do
 
 workRun :: Work -> IO ()
 workRun work = do
-    (mms, ()) <- runState (ManManState [] [] []) $ runWork work
+    (mms, ()) <-
+        runState (ManManState [] [] []) $ runMetric @ManManMetric $ runWork work
     forever $ do
         res <-
             for (zip3 [1 ..] (mms ^. threadCounter) (mms ^. allCounter))
