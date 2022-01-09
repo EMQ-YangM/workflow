@@ -50,6 +50,9 @@ fun v idx f = unsafeModify v f (get idx)
 gv :: (KnownSymbol s, Default a) => IOVector Int -> (a -> K s) -> IO Int
 gv v idx = unsafeRead v (get idx)
 
+pv :: (KnownSymbol s, Default a) => IOVector Int -> (a -> K s) -> Int -> IO ()
+pv v idx = unsafeWrite v (get idx)
+
 addOne1 :: (KnownSymbol s, Default a) => IOVector Int -> (a -> K s) -> IO ()
 addOne1 v idx = fun v idx (+ 1)
 
@@ -61,7 +64,7 @@ data Metric v m a where
     AddOne ::KnownSymbol s => (v -> K s) -> Metric v m ()
     SubOne ::KnownSymbol s => (v -> K s) -> Metric v m ()
     GetVal ::KnownSymbol s => (v -> K s) -> Metric v m Int
-    -- PutVal ::KnownSymbol s => (v -> K s) -> Int -> Metric v m ()
+    PutVal ::KnownSymbol s => (v -> K s) -> Int -> Metric v m ()
 
 addOne :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> m ()
 addOne g = send (AddOne g)
@@ -71,6 +74,9 @@ subOne g = send (SubOne g)
 
 getVal :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> m Int
 getVal g = send (GetVal g)
+
+putVal :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> Int -> m ()
+putVal g v = send (PutVal g v)
 
 newtype MetriC v m a= MetriC { unMetric :: ReaderC (IOVector Int) m a }
   deriving (Functor, Applicative, Monad, MonadIO)
@@ -86,6 +92,9 @@ instance (Algebra sig m, MonadIO m, Default v) => Algebra (Metric v :+: sig ) (M
         L (GetVal g) -> do
             v <- liftIO $ gv iov g
             pure (v <$ ctx)
+        L (PutVal g v) -> do
+            liftIO $ pv iov g v
+            pure ctx
         R signa -> alg (runReader iov . unMetric . hdl) signa ctx
 
 runMetric :: forall v m a . (MonadIO m) => MetriC v m a -> m (IOVector Int, a)
@@ -113,6 +122,7 @@ v1 = do
         addOne sleeper
         addOne smCounter
     replicateM_ 1000 (addOne smCounter)
+    -- putVal smCounter 10
     getVal smCounter
 
 -- >>> r1
