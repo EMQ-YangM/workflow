@@ -208,7 +208,7 @@ data ManManState = ManManState
     }
 makeLenses ''ManManState
 
-makeMetrics "ManManMetric" ["mmm_allmanager"]
+makeMetrics "ManManMetric" ["mmm_allmanager", "mmm_pipe"]
 
 runFlow
     :: (Has (State ManManState :+: Metric ManManMetric) sig m, MonadIO m)
@@ -229,6 +229,8 @@ runFlow (ti, ci) = \case
             $ runMetric @ManMetric
             $ manage f ti ci to co td
         addOne mmm_allmanager
+        addOne mmm_pipe
+
         allCounter %= (ci :)
         manThid %= (thid :)
         threadCounter %= (td :)
