@@ -63,16 +63,17 @@ type WorkName = String
 data WorkError = WorkStop
 
 data WorkMetric = WorkMetric
-    { mincCounter   :: K "0"
-    , moutCounter   :: K "1"
-    , merrorCounter :: K "2"
+    { wm_allloops :: K "0"
+    , wm_inputs   :: K "1"
+    , wm_outputs  :: K "2"
+    , wm_errors   :: K "3"
     }
 
 instance Default WorkMetric where
-    def = WorkMetric K K K
+    def = WorkMetric K K K K
 
 instance Vlength WorkMetric where
-    vlength _ = 3
+    vlength _ = 4
 
 workloop
     :: forall input output sig m
@@ -87,6 +88,7 @@ workloop
     -> (input -> IO output)
     -> m ()
 workloop workName fun = forever $ do
+    addOne wm_allloops
     crf  <- view @(WorkEnv input output) commandRef
     comm <- liftIO $ readIORef crf
     case comm of
@@ -94,7 +96,7 @@ workloop workName fun = forever $ do
         NoCommand -> do
             tic   <- view @(WorkEnv input output) inputChan
             input <- liftIO $ atomically $ readTChan tic
-            addOne mincCounter
+            addOne wm_inputs
 
             ic <- view @(WorkEnv input output) inputChanCounter
             liftIO $ atomicModifyIORef' ic (\x -> (x - 1, ()))
@@ -102,17 +104,17 @@ workloop workName fun = forever $ do
             val <- liftIO $ try @SomeException $ fun input
             case val of
                 Left se -> do  -- handle error
+                    addOne wm_errors
                     let name = workName
-                    addOne merrorCounter
                     liftIO $ appendFile name (show se)
 
                 Right output -> do
                     toc <- view @(WorkEnv input output) outputChan
                     liftIO $ atomically $ writeTChan toc output
+                    addOne wm_outputs
 
                     oc <- view @(WorkEnv input output) outputChanCounter
                     liftIO $ atomicModifyIORef' oc (\x -> (x + 1, ()))
-                    addOne moutCounter
 
 data WorkRecord = WorkRecord
     { workId      :: Int
