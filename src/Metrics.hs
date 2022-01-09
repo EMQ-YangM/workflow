@@ -107,26 +107,22 @@ data V = V
     { timer     :: K "0"
     , sleeper   :: K "1"
     , counter   :: K "2"
-    , smCounter :: K "3"
     }
 
 instance Default V where
-    def = V K K K K
+    def = V K K K 
 
 instance Vlength a where
-    vlength _ = 4
+    vlength _ = 3
 
 v1 :: (Has (Metric V) sig m, MonadIO m) => m Int
 v1 = do
     replicateM_ 31 $ do
         addOne sleeper
-        addOne smCounter
-    replicateM_ 1000 (addOne smCounter)
-    -- putVal smCounter 10
-    getVal smCounter
+    getVal sleeper
 
 -- >>> r1
--- 1031
+-- 31
 r1 :: IO Int
 r1 = do
     snd <$> runMetric @V v1
