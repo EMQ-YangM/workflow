@@ -121,6 +121,7 @@ data WorkRecord = WorkRecord
     , workName    :: WorkName
     , workCommand :: IORef Command
     , workThid    :: ThreadId
+    , workMetric  :: Vec WorkMetric
     }
 
 newtype WorkManState = WorkManState
@@ -165,6 +166,7 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
             ForkAWorker -> do
                 number     <- fresh
                 commandRef <- liftIO $ newIORef NoCommand
+                vec <- liftIO $ creatVec @WorkMetric
                 thid       <-
                     liftIO
                     $ forkIO
@@ -176,14 +178,19 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
                                    outputChanCounter
                                    commandRef
                           )
-                    $ runMetric @WorkMetric
+                    $ runMetricWith vec
                     $ runError @WorkError
                     $ workloop (show number) f
                 modify
                     ( WorkManState
                     . IntMap.insert
                           number
-                          (WorkRecord number "nameless" commandRef thid)
+                          (WorkRecord number
+                                      "nameless"
+                                      commandRef
+                                      thid
+                                      vec
+                          )
                     . allWorks
                     )
         liftIO $ threadDelay 300000
