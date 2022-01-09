@@ -11,20 +11,53 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeOperators #-}
-module Metrics where
+module Metrics
+    ( Metric(..)
+    , addOne
+    , subOne
+    , getVal
+    , putVal
+    , runMetric
+    , runMetricWith
+    , creatVec
+    , makeMetrics
+    , Vec(..)
+    , K(..)
+    , Vlength(..)
+    ) where
 
-import           Control.Carrier.Reader
-import           Control.Effect.Labelled
-import           Control.Monad
-import           Control.Monad.IO.Class
-import           Data.Data
-import           Data.Default.Class
-import           Data.Kind
-import           Data.Maybe
-import           Data.Vector.Mutable
-import           GHC.TypeLits
+import           Control.Carrier.Reader         ( Algebra
+                                                , Has
+                                                , ReaderC(..)
+                                                , runReader
+                                                )
+import           Control.Effect.Labelled        ( type (:+:)(..)
+                                                , Algebra(..)
+                                                , Has
+                                                , send
+                                                )
+import           Control.Monad.IO.Class         ( MonadIO(..) )
+import           Data.Data                      ( Proxy(..) )
+import           Data.Kind                      ( Type )
+import           Data.Maybe                     ( Maybe(Nothing)
+                                                , fromJust
+                                                )
+import           Data.Vector.Mutable            ( IOVector
+                                                , replicate
+                                                , unsafeModify
+                                                , unsafeRead
+                                                , unsafeWrite
+                                                )
+import           GHC.TypeLits                   ( KnownSymbol
+                                                , Symbol
+                                                , symbolVal
+                                                )
 import           Prelude                 hiding ( replicate )
 import           Text.Read                      ( readMaybe )
+
+import           Data.Default.Class             ( Default(..) )
+import           Language.Haskell.TH     hiding ( Type )
+import qualified Prelude                       as P
 
 type K :: Symbol  -> Type
 data K s where
@@ -97,7 +130,8 @@ instance (Algebra sig m, MonadIO m, Default v) => Algebra (Metric v :+: sig ) (M
             pure ctx
         R signa -> alg (runReader iov . unMetric . hdl) signa ctx
 
-runMetric :: forall v m a . (MonadIO m, Default v, Vlength v) => MetriC v m a -> m a
+runMetric
+    :: forall v m a . (MonadIO m, Default v, Vlength v) => MetriC v m a -> m a
 runMetric f = do
     v <- liftIO creatVec
     runMetricWith v f
@@ -112,25 +146,46 @@ creatVec = do
 runMetricWith :: forall v m a . (MonadIO m) => Vec v -> MetriC v m a -> m a
 runMetricWith (Vec v iov) f = runReader iov $ unMetric f
 
-data V = V
-    { timer   :: K "0"
-    , sleeper :: K "1"
-    , counter :: K "2"
-    }
+makeMetrics :: String -> [String] -> Q [Dec]
+makeMetrics bn ls = do
+    classTypeDef <- fromJust <$> lookupTypeName "Default"
+    classTypeLen <- fromJust <$> lookupTypeName "Vlength"
 
-instance Default V where
-    def = V K K K
+    let contTypeV = mkName bn
+    methodDef  <- fromJust <$> lookupValueName "def"
+    methodVlen <- fromJust <$> lookupValueName "vlength"
 
-instance Vlength V where
-    vlength _ = 3
+    let vVal = mkName bn
+    kVal <- fromJust <$> lookupValueName "K"
+    let aal = P.foldl (\acc var -> AppE acc (ConE var))
+                      (ConE vVal)
+                      (P.replicate (Prelude.length ls) kVal)
+    let iDec = InstanceD Nothing
+                         []
+                         (AppT (ConT classTypeDef) (ConT contTypeV))
+                         [mDec]
+        mDec  = ValD (VarP methodDef) (NormalB aal) []
 
-v1 :: (Has (Metric V) sig m, MonadIO m) => m Int
-v1 = do
-    replicateM_ 31 $ do
-        addOne timer
-    getVal sleeper
+        iDec1 = InstanceD Nothing
+                          []
+                          (AppT (ConT classTypeLen) (ConT contTypeV))
+                          [iFun]
+        iFun = FunD
+            methodVlen
+            [ Clause
+                  [WildP]
+                  (NormalB (LitE (IntegerL $ fromIntegral $ P.length ls)))
+                  []
+            ]
 
--- >>> r1
--- 0
-r1 :: IO Int
-r1 = runMetric @V v1
+    kType <- fromJust <$> lookupTypeName "K"
+    let ddd  = DataD [] (mkName bn) [] Nothing [cons] []
+        cons = RecC
+            (mkName bn)
+            [ ( mkName b
+              , Bang NoSourceUnpackedness NoSourceStrictness
+              , AppT (ConT kType) (LitT (StrTyLit (show a)))
+              )
+            | (a, b) <- zip [0, 1 ..] ls
+            ]
+    pure [ddd, iDec, iDec1]

@@ -62,18 +62,7 @@ type WorkName = String
 
 data WorkError = WorkStop
 
-data WorkMetric = WorkMetric
-    { wm_allloops :: K "0"
-    , wm_inputs   :: K "1"
-    , wm_outputs  :: K "2"
-    , wm_errors   :: K "3"
-    }
-
-instance Default WorkMetric where
-    def = WorkMetric K K K K
-
-instance Vlength WorkMetric where
-    vlength _ = 4
+makeMetrics "WorkMetric" ["wm_allloops", "wm_inputs", "wm_outputs", "wm_errors"]
 
 workloop
     :: forall input output sig m
@@ -166,7 +155,7 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
             ForkAWorker -> do
                 number     <- fresh
                 commandRef <- liftIO $ newIORef NoCommand
-                vec <- liftIO $ creatVec @WorkMetric
+                vec        <- liftIO $ creatVec @WorkMetric
                 thid       <-
                     liftIO
                     $ forkIO
@@ -185,12 +174,7 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
                     ( WorkManState
                     . IntMap.insert
                           number
-                          (WorkRecord number
-                                      "nameless"
-                                      commandRef
-                                      thid
-                                      vec
-                          )
+                          (WorkRecord number "nameless" commandRef thid vec)
                     . allWorks
                     )
         liftIO $ threadDelay 300000
