@@ -41,6 +41,7 @@ import           Data.Data                      ( Proxy(..) )
 import           Data.Kind                      ( Type )
 import           Data.Maybe                     ( Maybe(Nothing)
                                                 , fromJust
+                                                , fromMaybe
                                                 )
 import           Data.Vector.Mutable            ( IOVector
                                                 , replicate
@@ -148,11 +149,13 @@ runMetricWith (Vec v iov) f = runReader iov $ unMetric f
 
 makeMetrics :: String -> [String] -> Q [Dec]
 makeMetrics bn ls = do
-    classTypeDef <- fromJust <$> lookupTypeName "Default"
+    classTypeDef <- fromMaybe (error "you need impore Data.Default.Class ")
+        <$> lookupTypeName "Default"
     classTypeLen <- fromJust <$> lookupTypeName "Vlength"
 
     let contTypeV = mkName bn
-    methodDef  <- fromJust <$> lookupValueName "def"
+    methodDef <- fromMaybe (error "you need impore Data.Default.Class ")
+        <$> lookupValueName "def"
     methodVlen <- fromJust <$> lookupValueName "vlength"
 
     let vVal = mkName bn
