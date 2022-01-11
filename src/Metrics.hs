@@ -17,6 +17,7 @@ module Metrics
     , subOne
     , getVal
     , putVal
+    , getAll
     , runMetric
     , runMetricWith
     , creatVec
@@ -57,6 +58,7 @@ import           Prelude                 hiding ( replicate )
 import           Text.Read                      ( readMaybe )
 
 import           Data.Default.Class             ( Default(..) )
+import qualified Data.Vector.Mutable           as M
 import           Language.Haskell.TH     hiding ( Type )
 import qualified Prelude                       as P
 
@@ -99,6 +101,7 @@ data Metric v m a where
     SubOne ::KnownSymbol s => (v -> K s) -> Metric v m ()
     GetVal ::KnownSymbol s => (v -> K s) -> Metric v m Int
     PutVal ::KnownSymbol s => (v -> K s) -> Int -> Metric v m ()
+    GetAll ::Proxy v -> Metric v m [Int]
 
 addOne :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> m ()
 addOne g = send (AddOne g)
@@ -111,6 +114,9 @@ getVal g = send (GetVal g)
 
 putVal :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> Int -> m ()
 putVal g v = send (PutVal g v)
+
+getAll :: Has (Metric v) sig m => Proxy v -> m [Int]
+getAll v = send (GetAll v)
 
 newtype MetriC v m a= MetriC { unMetric :: ReaderC (IOVector Int) m a }
   deriving (Functor, Applicative, Monad, MonadIO)
@@ -129,6 +135,9 @@ instance (Algebra sig m, MonadIO m, Default v) => Algebra (Metric v :+: sig ) (M
         L (PutVal g v) -> do
             liftIO $ pv iov g v
             pure ctx
+        L (GetAll v) -> do
+            v <- liftIO $ M.foldr' (:) [] iov
+            pure (v <$ ctx)
         R signa -> alg (runReader iov . unMetric . hdl) signa ctx
 
 runMetric

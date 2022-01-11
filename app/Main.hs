@@ -1,8 +1,8 @@
 module Main where
 
-import qualified MyLib (someFunc)
+import           Control.Monad
+import qualified GenServerExample              as G
+import qualified MyLib                          ( someFunc )
 
 main :: IO ()
-main = do
-  putStrLn "Hello, Haskell!"
-  MyLib.someFunc
+main = void G.runExample
