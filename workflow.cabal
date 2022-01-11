@@ -23,6 +23,7 @@ library
                     , Type
                     , Metrics
                     , MetricsExample
+                    , Master
 
     -- Modules included in this library but not exported.
     -- other-modules:
