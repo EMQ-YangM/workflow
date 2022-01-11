@@ -12,7 +12,7 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
 {-# LANGUAGE AllowAmbiguousTypes, TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
-module Master where
+module GenServer where
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
 import           Control.Concurrent
@@ -42,23 +42,23 @@ type family Elem (t :: Type) (ts :: [Type]) :: Constraint where
 inject :: (ToSig e f, Elem e r) => e -> Sum f r
 inject = Sum . toSig
 
-type Master :: (Type -> Type)
+type GenServer :: (Type -> Type)
             -> [Type]
             -> (Type -> Type)
             -> Type
             -> Type
-data Master s ts m a where
-    SendReq ::(Elem t ts, ToSig t s) => t -> Master s ts m ()
+data GenServer s ts m a where
+    SendReq ::(Elem t ts, ToSig t s) => t -> GenServer s ts m ()
 
 sendReq
-    :: (HasLabelled Master (Master s ts) sig m, Elem t ts, ToSig t s)
+    :: (HasLabelled GenServer (GenServer s ts) sig m, Elem t ts, ToSig t s)
     => t
     -> m ()
-sendReq t = sendLabelled @Master (SendReq t)
+sendReq t = sendLabelled @GenServer (SendReq t)
 
 call
     :: forall s ts sig m e b
-     . ( HasLabelled Master (Master s ts) sig m
+     . ( HasLabelled GenServer (GenServer s ts) sig m
        , Elem e ts
        , ToSig e s
        , MonadIO m
@@ -73,7 +73,7 @@ call f = do
 
 cast
     :: forall s ts sig m e b
-     . ( HasLabelled Master (Master s ts) sig m
+     . ( HasLabelled GenServer (GenServer s ts) sig m
        , Elem e ts
        , ToSig e s
        , MonadIO m
@@ -84,23 +84,24 @@ cast f = do
     liftIO $ putStrLn "send cast"
     sendReq f
 
-newtype MasterC s ts m a = MasterC { unMasterC :: ReaderC (Chan (Sum s ts)) m a }
+newtype GenServerC s ts m a = GenServerC { unGenServerC :: ReaderC (Chan (Sum s ts)) m a }
   deriving (Functor, Applicative, Monad, MonadIO)
 
-instance (Algebra sig m, MonadIO m) => Algebra (Master s ts :+: sig) (MasterC s ts m) where
-    alg hdl sig ctx = MasterC $ ReaderC $ \c -> case sig of
+instance (Algebra sig m, MonadIO m) => Algebra (GenServer s ts :+: sig) (GenServerC s ts m) where
+    alg hdl sig ctx = GenServerC $ ReaderC $ \c -> case sig of
         L (SendReq t) -> do
             liftIO $ writeChan c (inject t)
             pure ctx
-        R signa -> alg (runReader c . unMasterC . hdl) signa ctx
+        R signa -> alg (runReader c . unGenServerC . hdl) signa ctx
 
-runMasterWith :: Chan (Sum s ts) -> Labelled Master (MasterC s ts) m a -> m a
-runMasterWith chan f = runReader chan $ unMasterC $ runLabelled f
+runGenServerWith
+    :: Chan (Sum s ts) -> Labelled GenServer (GenServerC s ts) m a -> m a
+runGenServerWith chan f = runReader chan $ unGenServerC $ runLabelled f
 
-runMaster :: MonadIO m => Labelled Master (MasterC s ts) m a -> m a
-runMaster f = do
+runGenServer :: MonadIO m => Labelled GenServer (GenServerC s ts) m a -> m a
+runGenServer f = do
     chan <- liftIO newChan
-    runMasterWith chan f
+    runGenServerWith chan f
 
 -- example
 
@@ -131,13 +132,13 @@ instance ToSig GetMetric SigMessage where
 type T = '[Message1 , Message2 , Stop , GetMetric]
 type TC = Chan (Sum SigMessage T)
 
-master
-    :: ( HasLabelled Master (Master SigMessage T) sig m
+client
+    :: ( HasLabelled GenServer (GenServer SigMessage T) sig m
        , Has (Error Stop) sig m
        , MonadIO m
        )
     => m a
-master = do
+client = do
     forever $ do
         liftIO $ putStr "input: "
         li <- liftIO getLine
@@ -153,8 +154,8 @@ master = do
 
 makeMetrics "SomeMetric" ["m1", "m2", "m3"]
 
-worker :: (Has (Metric SomeMetric :+: Reader TC) sig m, MonadIO m) => m ()
-worker = do
+server :: (Has (Metric SomeMetric :+: Reader TC) sig m, MonadIO m) => m ()
+server = do
     tc    <- ask @TC
     Sum v <- liftIO $ readChan tc
     case v of
@@ -165,18 +166,18 @@ worker = do
                 print a
                 putStrLn $ "  send respon: " ++ (a ++ " received")
                 putMVar b (a ++ " received")
-            worker
-        SigMessage2 mes                -> worker
+            server
+        SigMessage2 mes                -> server
         SigMessage3 Stop               -> liftIO $ print "Stop"
         SigMessage4 (GetMetric name v) -> do
             addOne m2
             case name of
                 "m1" -> getVal m1 >>= liftIO . putMVar v
                 "m2" -> getVal m2 >>= liftIO . putMVar v
-            worker
+            server
 
 runVal :: IO (Either Stop a)
 runVal = do
     tc <- newChan
-    forkIO $ runReader tc $ runMetric @SomeMetric worker
-    runMasterWith tc $ runError @Stop master
+    forkIO $ runReader tc $ runMetric @SomeMetric server
+    runGenServerWith tc $ runError @Stop client
