@@ -1,11 +1,11 @@
 {-# LANGUAGE GADTs, TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module GenServerTH where
+module HasServerTH where
 
 import           Control.Concurrent
 import           Data.Maybe
-import           GenServer
+import           HasServer
 import           Language.Haskell.TH
 
 mkSigAndClass :: String -> [Name] -> Q [Dec]

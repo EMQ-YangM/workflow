@@ -12,7 +12,7 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
 {-# LANGUAGE AllowAmbiguousTypes, TemplateHaskell #-}
 
-module GenServer where
+module HasServer where
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
 import           Control.Concurrent
@@ -24,6 +24,7 @@ import           Data.Kind                      ( Constraint
                                                 , Type
                                                 )
 import           GHC.TypeLits                   ( ErrorMessage(Text)
+                                                , Symbol
                                                 , TypeError
                                                 )
 import           Metrics
@@ -42,23 +43,27 @@ type family Elem (t :: Type) (ts :: [Type]) :: Constraint where
 inject :: (ToSig e f, Elem e r) => e -> Sum f r
 inject = Sum . toSig
 
-type GenServer :: (Type -> Type)
+type HasServer :: (Type -> Type)
             -> [Type]
             -> (Type -> Type)
             -> Type
             -> Type
-data GenServer s ts m a where
-    SendReq ::(Elem t ts, ToSig t s) => t -> GenServer s ts m ()
+data HasServer s ts m a where
+    SendReq ::(Elem t ts, ToSig t s) => t -> HasServer s ts m ()
 
 sendReq
-    :: (HasLabelled GenServer (GenServer s ts) sig m, Elem t ts, ToSig t s)
+    :: forall serverName s ts sig m t
+     . ( HasLabelled (serverName :: Symbol) (HasServer s ts) sig m
+       , Elem t ts
+       , ToSig t s
+       )
     => t
     -> m ()
-sendReq t = sendLabelled @GenServer (SendReq t)
+sendReq t = sendLabelled @serverName (SendReq t)
 
 call
-    :: forall s ts sig m e b
-     . ( HasLabelled GenServer (GenServer s ts) sig m
+    :: forall serverName s ts sig m e b
+     . ( HasLabelled (serverName :: Symbol) (HasServer s ts) sig m
        , Elem e ts
        , ToSig e s
        , MonadIO m
@@ -66,14 +71,14 @@ call
     => (MVar b -> e)
     -> m b
 call f = do
-    liftIO $ putStrLn "send call, wait response"
+    -- liftIO $ putStrLn "send call, wait response"
     mvar <- liftIO newEmptyMVar
-    sendReq (f mvar)
+    sendReq @serverName (f mvar)
     liftIO $ takeMVar mvar
 
 cast
-    :: forall s ts sig m e b
-     . ( HasLabelled GenServer (GenServer s ts) sig m
+    :: forall serverName s ts sig m e b
+     . ( HasLabelled (serverName :: Symbol) (HasServer s ts) sig m
        , Elem e ts
        , ToSig e s
        , MonadIO m
@@ -82,23 +87,30 @@ cast
     -> m ()
 cast f = do
     -- liftIO $ putStrLn "send cast"
-    sendReq f
+    sendReq @serverName f
 
-newtype GenServerC s ts m a = GenServerC { unGenServerC :: ReaderC (Chan (Sum s ts)) m a }
+newtype HasServerC s ts m a = HasServerC { unHasServerC :: ReaderC (Chan (Sum s ts)) m a }
   deriving (Functor, Applicative, Monad, MonadIO)
 
-instance (Algebra sig m, MonadIO m) => Algebra (GenServer s ts :+: sig) (GenServerC s ts m) where
-    alg hdl sig ctx = GenServerC $ ReaderC $ \c -> case sig of
+instance (Algebra sig m, MonadIO m) => Algebra (HasServer s ts :+: sig) (HasServerC s ts m) where
+    alg hdl sig ctx = HasServerC $ ReaderC $ \c -> case sig of
         L (SendReq t) -> do
             liftIO $ writeChan c (inject t)
             pure ctx
-        R signa -> alg (runReader c . unGenServerC . hdl) signa ctx
+        R signa -> alg (runReader c . unHasServerC . hdl) signa ctx
 
-runGenServerWith
-    :: Chan (Sum s ts) -> Labelled GenServer (GenServerC s ts) m a -> m a
-runGenServerWith chan f = runReader chan $ unGenServerC $ runLabelled f
+runHasServerWith
+    :: forall serverName s ts m a
+     . Chan (Sum s ts)
+    -> Labelled (serverName :: Symbol) (HasServerC s ts) m a
+    -> m a
+runHasServerWith chan f = runReader chan $ unHasServerC $ runLabelled f
 
-runGenServer :: MonadIO m => Labelled GenServer (GenServerC s ts) m a -> m a
-runGenServer f = do
+runHasServer
+    :: forall serverName s ts m a
+     . MonadIO m
+    => Labelled (serverName :: Symbol) (HasServerC s ts) m a
+    -> m a
+runHasServer f = do
     chan <- liftIO newChan
-    runGenServerWith chan f
+    runHasServerWith @serverName chan f

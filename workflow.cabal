@@ -23,9 +23,9 @@ library
                     , Type
                     , Metrics
                     , MetricsExample
-                    , GenServer
-                    , GenServerTH
-                    , GenServerExample
+                    , HasServer
+                    , HasServerTH
+                    , HasServerExample
 
     -- Modules included in this library but not exported.
     -- other-modules:
