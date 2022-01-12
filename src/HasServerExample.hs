@@ -9,6 +9,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 module HasServerExample where
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
@@ -54,24 +55,21 @@ mkSigAndClass "SigDB"
   ]
 
 mkSigAndClass "SigLog"
- [ ''LogMessage
- , ''GetAllMetric
- ]
+  [ ''LogMessage
+  , ''GetAllMetric
+  ]
 
 makeMetrics "ClientMetric" ["total_loop", "t_m1", "t_m2", "t_str"]
 
 client
-    :: ( HasLabelled
-             "Some"
-             (HasServer SigMessage '[Message1 , GetAllMetric])
-             sig
-             m
-       , HasLabelled
+    :: ( HasLabelledServer "Some" SigMessage '[Message1 , GetAllMetric] sig m
+       , HasLabelledServer "log" SigLog '[LogMessage , GetAllMetric] sig m
+       , HasLabelledServer
              "db"
-             (HasServer SigDB '[DBwrite , GetAllMetric , DBReader , GetDBSize])
+             SigDB
+             '[DBwrite , GetAllMetric , DBReader , GetDBSize]
              sig
              m
-       , HasLabelled "log" (HasServer SigLog '[LogMessage , GetAllMetric]) sig m
        , Has (Error Stop :+: Metric ClientMetric) sig m
        , MonadIO m
        )
@@ -110,7 +108,7 @@ client = forever $ do
 makeMetrics "DBmetric" ["db_write", "db_read"]
 
 dbServer
-    :: ( HasLabelled "log" (HasServer SigLog '[LogMessage]) sig m
+    :: ( HasLabelledServer "log" SigLog '[LogMessage] sig m
        , Has
              ( Reader (Chan (Some SigDB)) :+: State (Map Int String) :+: Metric DBmetric
              )

@@ -11,6 +11,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
 {-# LANGUAGE AllowAmbiguousTypes, TemplateHaskell #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module HasServer where
 import           Control.Carrier.Error.Either   ( Algebra
@@ -44,7 +45,11 @@ import           Control.Monad.IO.Class         ( MonadIO(..) )
 import           Data.Kind                      ( Constraint
                                                 , Type
                                                 )
-import           GHC.TypeLits                   ( ErrorMessage(Text)
+import           GHC.TypeLits                   ( ErrorMessage
+                                                    ( (:<>:)
+                                                    , ShowType
+                                                    , Text
+                                                    )
                                                 , Symbol
                                                 , TypeError
                                                 )
@@ -61,9 +66,18 @@ data Some f where
     Some ::f a -> Some f
 
 type family Elem (t :: Type) (ts :: [Type]) :: Constraint where
-    Elem t '[] = TypeError ('Text "not in req list")
+    Elem t '[] = TypeError ('Text "Dec error: " :<>: 'ShowType t ':<>: 'Text " : method not support")
     Elem t (t ': xs) = ()
     Elem t (t1 ': xs) = Elem t xs
+
+type family Elems (ls :: [Type]) (ts :: [Type]) :: Constraint where
+    Elems (l ': ls) ts = (Elem l ts, Elems ls ts)
+    Elems '[] ts = ()
+
+type family ToList (a :: (Type -> Type)) :: [Type]
+
+type HasLabelledServer (serverName :: Symbol) s ts sig m
+    = (Elems ts (ToList s), HasLabelled serverName (HasServer s ts) sig m)
 
 inject :: (ToSig e f, Elem e r) => e -> Sum f r
 inject = Sum . toSig
@@ -74,7 +88,7 @@ type HasServer :: (Type -> Type)
             -> Type
             -> Type
 data HasServer s ts m a where
-    SendReq ::(Elem t ts, ToSig t s) => t -> HasServer s ts m ()
+    SendReq ::(Elem t ts, ToSig t s) =>t -> HasServer s ts m ()
 
 sendReq
     :: forall serverName s ts sig m t

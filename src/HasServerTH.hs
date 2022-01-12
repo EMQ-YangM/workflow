@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs, TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DataKinds #-}
 module HasServerTH where
 
 import           Control.Concurrent
@@ -12,7 +13,8 @@ mkSigAndClass :: String -> [Name] -> Q [Dec]
 mkSigAndClass sname gs = do
     sig <- mkSig sname gs
     cls <- mkClass sname gs
-    pure $ sig ++ cls
+    ins <- mkTypeIns sname gs
+    pure $ sig ++ cls ++ ins
 
 
 mkSig :: String -> [Name] -> Q [Dec]
@@ -34,8 +36,8 @@ mkSig sname gs = do
 
 mkClass :: String -> [Name] -> Q [Dec]
 mkClass sname gs = do
-    tosig  <- fromMaybe (error "not find 1 ToSig") <$> lookupTypeName "ToSig"
-    method <- fromMaybe (error "not find 2 toSig") <$> lookupValueName "toSig"
+    tosig  <- fromMaybe (error "not find ToSig") <$> lookupTypeName "ToSig"
+    method <- fromMaybe (error "not find toSig") <$> lookupValueName "toSig"
     let
         decs =
             [ InstanceD
@@ -57,3 +59,16 @@ mkClass sname gs = do
             | (idx, g1) <- zip [1 ..] gs
             ]
     pure decs
+
+mkTypeIns :: String -> [Name] -> Q [Dec]
+mkTypeIns sname gs = do
+    toListT <- fromMaybe (error "not find ToList") <$> lookupTypeName "ToList"
+    let ds  = [ AppT PromotedConsT (ConT g1) | g1 <- gs ]
+        dec = TySynInstD
+            (TySynEqn Nothing
+                      (AppT (ConT toListT) (ConT (mkName sname)))
+                      (foldr AppT PromotedNilT ds)
+            )
+
+
+    pure [dec]
