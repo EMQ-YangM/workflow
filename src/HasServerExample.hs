@@ -118,13 +118,13 @@ dbServer
     => m ()
 dbServer = serverHelper @SigDB @DB $ \case
     SigDB1 (DBwrite k v) -> do
-        addOne db_write
+        inc db_write
         modify (Map.insert k v)
     SigDB2 (GetAllMetric tmv) -> do
         am <- getAll @DBmetric Proxy
         liftIO $ putMVar tmv am
     SigDB3 (DBReader k tmv) -> do
-        addOne db_read
+        inc db_read
         val <- gets (Map.lookup k)
         liftIO $ putMVar tmv val
     SigDB4 (GetDBSize tmv) -> do
@@ -142,7 +142,7 @@ logServer
     => m ()
 logServer = serverHelper @SigLog @Log $ \case
     SigLog1 (LogMessage s) -> do
-        addOne log_total
+        inc log_total
         liftIO $ do
             putStr "log thread print: "
             print s
@@ -163,7 +163,7 @@ server
     => m ()
 server = serverHelper @SigMessage @T $ \case
     SigMessage1 (Message1 a b) -> do
-        addOne m1
+        inc m1
         liftIO $ do
             putMVar b (a ++ " received")
     SigMessage2 (GetAllMetric tmv) -> do

@@ -77,7 +77,7 @@ workloop
     -> (input -> IO output)
     -> m ()
 workloop workName fun = forever $ do
-    addOne wm_allloops
+    inc wm_allloops
     crf  <- view @(WorkEnv input output) commandRef
     comm <- liftIO $ readIORef crf
     case comm of
@@ -85,7 +85,7 @@ workloop workName fun = forever $ do
         NoCommand -> do
             tic   <- view @(WorkEnv input output) inputChan
             input <- liftIO $ atomically $ readTChan tic
-            addOne wm_inputs
+            inc wm_inputs
 
             ic <- view @(WorkEnv input output) inputChanCounter
             liftIO $ atomicModifyIORef' ic (\x -> (x - 1, ()))
@@ -93,14 +93,14 @@ workloop workName fun = forever $ do
             val <- liftIO $ try @SomeException $ fun input
             case val of
                 Left se -> do  -- handle error
-                    addOne wm_errors
+                    inc wm_errors
                     let name = workName
                     liftIO $ appendFile name (show se)
 
                 Right output -> do
                     toc <- view @(WorkEnv input output) outputChan
                     liftIO $ atomically $ writeTChan toc output
-                    addOne wm_outputs
+                    inc wm_outputs
 
                     oc <- view @(WorkEnv input output) outputChanCounter
                     liftIO $ atomicModifyIORef' oc (\x -> (x + 1, ()))
@@ -142,7 +142,7 @@ manage
     -> m ()
 manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
     = forever $ do
-        inc   <- liftIO $ readIORef inputChanCounter
+        inc1   <- liftIO $ readIORef inputChanCounter
         out   <- liftIO $ readIORef outputChanCounter
         works <- gets (IntMap.size . allWorks)
         liftIO $ writeIORef threadCounter works
@@ -150,12 +150,12 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
         allworks <- getVal mm_forkworks
         liftIO $ putStrLn $ "forkedworks ... " ++ show allworks
 
-        case dynamciForkWork inc out works of
+        case dynamciForkWork inc1 out works of
             NoOperate   -> pure ()
             KillAWorker -> do
 
-                addOne mm_killedworks
-                subOne mm_allworks
+                inc mm_killedworks
+                dec mm_allworks
 
                 im <- gets allWorks
                 if IntMap.null im
@@ -166,8 +166,8 @@ manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
                         put (WorkManState im')
             ForkAWorker -> do
 
-                addOne mm_forkworks
-                addOne mm_allworks
+                inc mm_forkworks
+                inc mm_allworks
 
                 number     <- fresh
                 commandRef <- liftIO $ newIORef NoCommand
@@ -228,15 +228,15 @@ runFlow (ti, ci) = \case
             $ runFresh 0
             $ runMetric @ManMetric
             $ manage f ti ci to co td
-        addOne mmm_allmanager
-        addOne mmm_pipe
+        inc mmm_allmanager
+        inc mmm_pipe
 
         allCounter %= (ci :)
         manThid %= (thid :)
         threadCounter %= (td :)
         runFlow (to, co) fl
     Source f fl -> do
-        addOne mmm_allmanager
+        inc mmm_allmanager
         res <- liftIO $ do
             to <- newTChanIO
             co <- newIORef 0
@@ -254,7 +254,7 @@ runFlow (ti, ci) = \case
         stk <- liftIO $ newIORef 0
         allCounter %= (ci :)
         threadCounter %= (stk :)
-        addOne mmm_allmanager
+        inc mmm_allmanager
         liftIO $ forkIO $ void $ forever $ do
             oc <- atomically $ readTChan ti
             atomicModifyIORef' ci (\x -> (x - 1, ()))

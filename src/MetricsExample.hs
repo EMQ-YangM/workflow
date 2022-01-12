@@ -28,14 +28,14 @@ foo
        )
     => m ()
 foo = do
-    addOne ta
+    inc ta
     replicateM_ 10 $ do
-        addOne tb
-        addOne ob
-        addOne sa
-        addOne outCounter
-    addOne inCounter
-    subOne tb
+        inc tb
+        inc ob
+        inc sa
+        inc outCounter
+    inc inCounter
+    dec tb
     a  <- getVal ta
     b  <- getVal tb
     c  <- getVal tc

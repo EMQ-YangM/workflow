@@ -13,8 +13,8 @@
 {-# LANGUAGE TypeOperators #-}
 module Metrics
     ( Metric(..)
-    , addOne
-    , subOne
+    , inc
+    , dec
     , getVal
     , putVal
     , getAll
@@ -89,25 +89,25 @@ gv v idx = unsafeRead v (get idx)
 pv :: (KnownSymbol s, Default a) => IOVector Int -> (a -> K s) -> Int -> IO ()
 pv v idx = unsafeWrite v (get idx)
 
-addOne1 :: (KnownSymbol s, Default a) => IOVector Int -> (a -> K s) -> IO ()
-addOne1 v idx = fun v idx (+ 1)
+inc1 :: (KnownSymbol s, Default a) => IOVector Int -> (a -> K s) -> IO ()
+inc1 v idx = fun v idx (+ 1)
 
-subOne1 :: (KnownSymbol s, Default a) => IOVector Int -> (a -> K s) -> IO ()
-subOne1 v idx = fun v idx (\x -> x - 1)
+dec1 :: (KnownSymbol s, Default a) => IOVector Int -> (a -> K s) -> IO ()
+dec1 v idx = fun v idx (\x -> x - 1)
 
 type Metric :: Type -> (Type -> Type) -> Type -> Type
 data Metric v m a where
-    AddOne ::KnownSymbol s => (v -> K s) -> Metric v m ()
-    SubOne ::KnownSymbol s => (v -> K s) -> Metric v m ()
+    Inc ::KnownSymbol s => (v -> K s) -> Metric v m ()
+    Dec ::KnownSymbol s => (v -> K s) -> Metric v m ()
     GetVal ::KnownSymbol s => (v -> K s) -> Metric v m Int
     PutVal ::KnownSymbol s => (v -> K s) -> Int -> Metric v m ()
     GetAll ::Proxy v -> Metric v m [Int]
 
-addOne :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> m ()
-addOne g = send (AddOne g)
+inc :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> m ()
+inc g = send (Inc g)
 
-subOne :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> m ()
-subOne g = send (SubOne g)
+dec :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> m ()
+dec g = send (Dec g)
 
 getVal :: (Has (Metric v) sig m, KnownSymbol s) => (v -> K s) -> m Int
 getVal g = send (GetVal g)
@@ -123,11 +123,11 @@ newtype MetriC v m a= MetriC { unMetric :: ReaderC (IOVector Int) m a }
 
 instance (Algebra sig m, MonadIO m, Default v) => Algebra (Metric v :+: sig ) (MetriC v m) where
     alg hdl sig ctx = MetriC $ ReaderC $ \iov -> case sig of
-        L (AddOne g) -> do
-            liftIO $ addOne1 iov g
+        L (Inc g) -> do
+            liftIO $ inc1 iov g
             pure ctx
-        L (SubOne g) -> do
-            liftIO $ subOne1 iov g
+        L (Dec g) -> do
+            liftIO $ dec1 iov g
             pure ctx
         L (GetVal g) -> do
             v <- liftIO $ gv iov g
