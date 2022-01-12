@@ -30,6 +30,8 @@ import           System.Random
 
 data Message1  where
      Message1 ::String -> MVar String -> Message1
+    --  Message1 ::String -> MVar String %1 -> Message1
+    --                   add linear type  (call function, server must response)
 data Stop = Stop
 newtype GetAllMetric = GetAllMetric (MVar [Int])
 
@@ -40,11 +42,13 @@ mkSigAndClass "SigMessage"
 
 data DBwrite = DBwrite Int String
 data DBReader = DBReader Int (MVar (Maybe String))
+newtype GetDBSize = GetDBSize (MVar Int)
 
 mkSigAndClass "SigDB"
   [ ''DBwrite
   , ''GetAllMetric
   , ''DBReader
+  , ''GetDBSize
   ]
 
 newtype LogMessage = LogMessage String
@@ -55,7 +59,7 @@ mkSigAndClass "SigLog"
  ]
 
 type T = '[Message1 , GetAllMetric]
-type DB = '[DBwrite , GetAllMetric , DBReader]
+type DB = '[DBwrite , GetAllMetric , DBReader , GetDBSize]
 type Log = '[LogMessage , GetAllMetric]
 
 makeMetrics "ClientMetric" ["total_loop", "t_m1", "t_m2", "t_str"]
@@ -88,11 +92,14 @@ client = forever $ do
 
     li <- liftIO getLine
     cast @"log" (LogMessage li)
-
-    val <- call @"Some" (Message1 li)
-    liftIO $ do
-        putStr "received: "
-        putStrLn val
+    case li of
+        "size" -> do
+            v <- call @"db" GetDBSize
+            liftIO $ putStrLn $ "DB size: " ++ show v
+        _ -> do
+            val <- call @"Some" (Message1 li)
+            liftIO $ do
+                putStrLn val
 
 ---- DB server
 
@@ -120,6 +127,9 @@ dbServer = serverHelper @SigDB @DB $ \case
         addOne db_read
         val <- gets (Map.lookup k)
         liftIO $ putMVar tmv val
+    SigDB4 (GetDBSize tmv) -> do
+        v <- gets @(Map Int String) Map.size
+        liftIO $ putMVar tmv v
 
 --- log server 
 
@@ -155,9 +165,6 @@ server = serverHelper @SigMessage @T $ \case
     SigMessage1 (Message1 a b) -> do
         addOne m1
         liftIO $ do
-            putStr "  receive message1: "
-            print a
-            putStrLn $ "  send respon: " ++ (a ++ " received")
             putMVar b (a ++ " received")
     SigMessage2 (GetAllMetric tmv) -> do
         am <- getAll @SomeMetric Proxy
