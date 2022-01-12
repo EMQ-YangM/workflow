@@ -35,14 +35,16 @@ data Message1  where
 data Stop = Stop
 newtype GetAllMetric = GetAllMetric (MVar [Int])
 
+data DBwrite = DBwrite Int String
+data DBReader = DBReader Int (MVar (Maybe String))
+newtype GetDBSize = GetDBSize (MVar Int)
+
+newtype LogMessage = LogMessage String
+
 mkSigAndClass "SigMessage"
   [ ''Message1
   , ''GetAllMetric
   ]
-
-data DBwrite = DBwrite Int String
-data DBReader = DBReader Int (MVar (Maybe String))
-newtype GetDBSize = GetDBSize (MVar Int)
 
 mkSigAndClass "SigDB"
   [ ''DBwrite
@@ -51,23 +53,25 @@ mkSigAndClass "SigDB"
   , ''GetDBSize
   ]
 
-newtype LogMessage = LogMessage String
-
 mkSigAndClass "SigLog"
  [ ''LogMessage
  , ''GetAllMetric
  ]
 
-type T = '[Message1 , GetAllMetric]
-type DB = '[DBwrite , GetAllMetric , DBReader , GetDBSize]
-type Log = '[LogMessage , GetAllMetric]
-
 makeMetrics "ClientMetric" ["total_loop", "t_m1", "t_m2", "t_str"]
 
 client
-    :: ( HasLabelled "Some" (HasServer SigMessage T) sig m
-       , HasLabelled "db" (HasServer SigDB DB) sig m
-       , HasLabelled "log" (HasServer SigLog Log) sig m
+    :: ( HasLabelled
+             "Some"
+             (HasServer SigMessage '[Message1 , GetAllMetric])
+             sig
+             m
+       , HasLabelled
+             "db"
+             (HasServer SigDB '[DBwrite , GetAllMetric , DBReader , GetDBSize])
+             sig
+             m
+       , HasLabelled "log" (HasServer SigLog '[LogMessage , GetAllMetric]) sig m
        , Has (Error Stop :+: Metric ClientMetric) sig m
        , MonadIO m
        )
@@ -106,7 +110,7 @@ client = forever $ do
 makeMetrics "DBmetric" ["db_write", "db_read"]
 
 dbServer
-    :: ( HasLabelled "log" (HasServer SigLog Log) sig m
+    :: ( HasLabelled "log" (HasServer SigLog '[LogMessage]) sig m
        , Has
              ( Reader (Chan (Some SigDB)) :+: State (Map Int String) :+: Metric DBmetric
              )
