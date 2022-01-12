@@ -13,13 +13,34 @@
 {-# LANGUAGE AllowAmbiguousTypes, TemplateHaskell #-}
 
 module HasServer where
-import           Control.Carrier.Error.Either
-import           Control.Carrier.Reader
-import           Control.Concurrent
-import           Control.Effect.Labelled
-import           Control.Monad
-import           Control.Monad.IO.Class
-import           Data.Default.Class
+import           Control.Carrier.Error.Either   ( Algebra
+                                                , Has
+                                                )
+import           Control.Carrier.Reader         ( Algebra
+                                                , Has
+                                                , Reader
+                                                , ReaderC(..)
+                                                , ask
+                                                , runReader
+                                                )
+import           Control.Concurrent             ( Chan
+                                                , MVar
+                                                , newChan
+                                                , newEmptyMVar
+                                                , readChan
+                                                , takeMVar
+                                                , writeChan
+                                                )
+import           Control.Effect.Labelled        ( type (:+:)(..)
+                                                , Algebra(..)
+                                                , Has
+                                                , HasLabelled
+                                                , Labelled
+                                                , runLabelled
+                                                , sendLabelled
+                                                )
+import           Control.Monad                  ( forever )
+import           Control.Monad.IO.Class         ( MonadIO(..) )
 import           Data.Kind                      ( Constraint
                                                 , Type
                                                 )
@@ -28,12 +49,16 @@ import           GHC.TypeLits                   ( ErrorMessage(Text)
                                                 , TypeError
                                                 )
 import           Metrics
+import           Unsafe.Coerce                  ( unsafeCoerce )
 
 data Sum f (r :: [*]) where
     Sum ::f t -> Sum f r
 
 class ToSig a b where
     toSig :: a -> b a
+
+data Some f where
+    Some ::f a -> Some f
 
 type family Elem (t :: Type) (ts :: [Type]) :: Constraint where
     Elem t '[] = TypeError ('Text "not in req list")
@@ -101,10 +126,11 @@ instance (Algebra sig m, MonadIO m) => Algebra (HasServer s ts :+: sig) (HasServ
 
 runHasServerWith
     :: forall serverName s ts m a
-     . Chan (Sum s ts)
+     . Chan (Some s)
     -> Labelled (serverName :: Symbol) (HasServerC s ts) m a
     -> m a
-runHasServerWith chan f = runReader chan $ unHasServerC $ runLabelled f
+runHasServerWith chan f =
+    runReader (unsafeCoerce chan) $ unHasServerC $ runLabelled f
 
 runHasServer
     :: forall serverName s ts m a
@@ -117,10 +143,10 @@ runHasServer f = do
 
 serverHelper
     :: forall f es sig m
-     . (Has (Reader (Chan (Sum f es))) sig m, MonadIO m)
+     . (Has (Reader (Chan (Some f))) sig m, MonadIO m)
     => (forall s . f s -> m ())
     -> m ()
 serverHelper f = forever $ do
-    tc    <- ask @(Chan (Sum f es))
-    Sum v <- liftIO $ readChan tc
+    tc     <- ask @(Chan (Some f))
+    Some v <- liftIO $ readChan tc
     f v
