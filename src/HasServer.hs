@@ -114,3 +114,13 @@ runHasServer
 runHasServer f = do
     chan <- liftIO newChan
     runHasServerWith @serverName chan f
+
+serverHelper
+    :: forall f es sig m
+     . (Has (Reader (Chan (Sum f es))) sig m, MonadIO m)
+    => (Sum f es -> m ())
+    -> m ()
+serverHelper f = do
+    tc <- ask @(Chan (Sum f es))
+    v  <- liftIO $ readChan tc
+    f v

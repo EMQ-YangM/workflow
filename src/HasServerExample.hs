@@ -8,6 +8,7 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
 module HasServerExample where
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
@@ -25,21 +26,17 @@ import           GHC.TypeLits
 import           HasServer
 import           HasServerTH
 import           Metrics
+import           System.Random
 
 data Message1  where
      Message1 ::String -> MVar String -> Message1
-
 data Stop = Stop
-
-newtype PutLog = PutLog String
 newtype GetAllMetric = GetAllMetric (MVar [Int])
 
 mkSigAndClass "SigMessage"
   [ ''Message1
   , ''GetAllMetric
   ]
-
-type T = '[Message1 , GetAllMetric]
 
 data DBwrite = DBwrite Int String
 data DBReader = DBReader Int (MVar (Maybe String))
@@ -50,21 +47,34 @@ mkSigAndClass "SigDB"
   , ''DBReader
   ]
 
+newtype LogMessage = LogMessage String
+
+mkSigAndClass "SigLog"
+ [ ''LogMessage
+ , ''GetAllMetric
+ ]
+
+type T = '[Message1 , GetAllMetric]
 type DB = '[DBwrite , GetAllMetric , DBReader]
+type Log = '[LogMessage , GetAllMetric]
 
 makeMetrics "ClientMetric" ["total_loop", "t_m1", "t_m2", "t_str"]
 
 client
     :: ( HasLabelled "Some" (HasServer SigMessage T) sig m
        , HasLabelled "db" (HasServer SigDB DB) sig m
+       , HasLabelled "log" (HasServer SigLog Log) sig m
        , Has (Error Stop :+: Metric ClientMetric) sig m
        , MonadIO m
        )
     => m a
 client = forever $ do
     liftIO $ putStrLn "writeDB "
-    cast @"db" (DBwrite 1 "nice")
-    val <- call @"db" (DBReader 1)
+
+    idx <- liftIO randomIO
+    val <- liftIO $ replicateM 4 randomIO
+    cast @"db" (DBwrite idx val)
+    val <- call @"db" (DBReader idx)
     liftIO $ putStrLn $ "readDB result is: " ++ show val
 
     allMetric <- call @"db" GetAllMetric
@@ -73,7 +83,12 @@ client = forever $ do
     allMetric <- call @"Some" GetAllMetric
     liftIO $ putStrLn $ "Some all metrics: " ++ show allMetric
 
-    li  <- liftIO getLine
+    allMetric <- call @"log" GetAllMetric
+    liftIO $ putStrLn $ "log all metrics: " ++ show allMetric
+
+    li <- liftIO getLine
+    cast @"log" (LogMessage li)
+
     val <- call @"Some" (Message1 li)
     liftIO $ do
         putStr "received: "
@@ -81,35 +96,51 @@ client = forever $ do
 
 ---- DB server
 type DBType = Sum SigDB DB
-type TB = Chan DBType
 
 makeMetrics "DBmetric" ["db_write", "db_read"]
 
 dbServer
-    :: ( Has (Reader TB :+: State (Map Int String) :+: Metric DBmetric) sig m
+    :: ( Has
+             ( Reader (Chan DBType) :+: State (Map Int String) :+: Metric DBmetric
+             )
+             sig
+             m
        , MonadIO m
        )
     => m ()
 dbServer = forever $ do
-    tc    <- ask @TB
-    Sum v <- liftIO $ readChan tc
-    dbHandler (Sum v)
+    serverHelper @SigDB @DB $ \case
+        Sum sd -> case sd of
+            SigDB1 (DBwrite k v) -> do
+                addOne db_write
+                modify (Map.insert k v)
+            SigDB2 (GetAllMetric tmv) -> do
+                am <- getAll @DBmetric Proxy
+                liftIO $ putMVar tmv am
+            SigDB3 (DBReader k tmv) -> do
+                addOne db_read
+                val <- gets (Map.lookup k)
+                liftIO $ putMVar tmv val
 
-dbHandler
-    :: (Has (State (Map Int String) :+: Metric DBmetric) sig m, MonadIO m)
-    => DBType
-    -> m ()
-dbHandler (Sum v) = case v of
-    SigDB1 (DBwrite k v) -> do
-        addOne db_write
-        modify (Map.insert k v)
-    SigDB2 (GetAllMetric tmv) -> do
-        am <- getAll @DBmetric Proxy
-        liftIO $ putMVar tmv am
-    SigDB3 (DBReader k tmv) -> do
-        addOne db_read
-        val <- gets (Map.lookup k)
-        liftIO $ putMVar tmv val
+--- log server 
+type LogType = Sum SigLog Log
+
+makeMetrics "LogMetric" ["log_total"]
+
+logServer
+    :: (Has (Reader (Chan LogType) :+: Metric LogMetric) sig m, MonadIO m)
+    => m ()
+logServer = forever $ do
+    serverHelper @SigLog @Log $ \case
+        Sum sl -> case sl of
+            SigLog1 (LogMessage s) -> do
+                addOne log_total
+                liftIO $ do
+                    putStr "log thread print: "
+                    print s
+            SigLog2 (GetAllMetric tmv) -> do
+                am <- getAll @LogMetric Proxy
+                liftIO $ putMVar tmv am
 
 ---- Some server
 
@@ -117,36 +148,32 @@ makeMetrics "SomeMetric" ["m1", "m2", "m3", "m4", "putlog"]
 
 type SType = Sum SigMessage T
 
-type TC = Chan SType
-
 server
-    :: (Has (Metric SomeMetric :+: Reader TC :+: Error Stop) sig m, MonadIO m)
+    :: ( Has (Metric SomeMetric :+: Reader (Chan SType) :+: Error Stop) sig m
+       , MonadIO m
+       )
     => m ()
 server = forever $ do
-    tc    <- ask @TC
-    Sum v <- liftIO $ readChan tc
-    handler (Sum v)
+    serverHelper @SigMessage @T
+        $ \case
+              Sum sm -> case sm of
+                  SigMessage1 (Message1 a b) -> do
+                      addOne m1
+                      liftIO $ do
+                          putStr "  receive message1: "
+                          print a
+                          putStrLn $ "  send respon: " ++ (a ++ " received")
+                          putMVar b (a ++ " received")
+                  SigMessage2 (GetAllMetric tmv) -> do
+                      am <- getAll @SomeMetric Proxy
+                      liftIO $ putMVar tmv am
 
-handler
-    :: (Has (Metric SomeMetric) sig m, Has (Error Stop) sig m, MonadIO m)
-    => SType
-    -> m ()
-handler (Sum v) = case v of
-    SigMessage1 (Message1 a b) -> do
-        addOne m1
-        liftIO $ do
-            putStr "  receive message1: "
-            print a
-            putStrLn $ "  send respon: " ++ (a ++ " received")
-            putMVar b (a ++ " received")
-    SigMessage2 (GetAllMetric tmv) -> do
-        am <- getAll @SomeMetric Proxy
-        liftIO $ putMVar tmv am
 ---- 
 runExample :: IO (Either Stop a)
 runExample = do
     tc  <- newChan
     dbc <- newChan
+    tlc <- newChan
     --- fork some server
     forkIO $ void $ runReader tc $ runMetric @SomeMetric $ runError @Stop server
 
@@ -157,8 +184,12 @@ runExample = do
         $ runMetric @DBmetric
         $ runState @(Map Int String) Map.empty dbServer
 
+    --- fork log server 
+    forkIO $ void $ runReader tlc $ runMetric @LogMetric logServer
+
     -- run client
     runHasServerWith @"Some" tc
         $ runHasServerWith @"db" dbc
+        $ runHasServerWith @"log" tlc
         $ runMetric @ClientMetric
         $ runError @Stop client
