@@ -118,9 +118,9 @@ runHasServer f = do
 serverHelper
     :: forall f es sig m
      . (Has (Reader (Chan (Sum f es))) sig m, MonadIO m)
-    => (Sum f es -> m ())
+    => (forall s . f s -> m ())
     -> m ()
-serverHelper f = do
-    tc <- ask @(Chan (Sum f es))
-    v  <- liftIO $ readChan tc
+serverHelper f = forever $ do
+    tc    <- ask @(Chan (Sum f es))
+    Sum v <- liftIO $ readChan tc
     f v

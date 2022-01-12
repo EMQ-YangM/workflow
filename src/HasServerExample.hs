@@ -95,6 +95,7 @@ client = forever $ do
         putStrLn val
 
 ---- DB server
+
 type DBType = Sum SigDB DB
 
 makeMetrics "DBmetric" ["db_write", "db_read"]
@@ -108,21 +109,20 @@ dbServer
        , MonadIO m
        )
     => m ()
-dbServer = forever $ do
-    serverHelper @SigDB @DB $ \case
-        Sum sd -> case sd of
-            SigDB1 (DBwrite k v) -> do
-                addOne db_write
-                modify (Map.insert k v)
-            SigDB2 (GetAllMetric tmv) -> do
-                am <- getAll @DBmetric Proxy
-                liftIO $ putMVar tmv am
-            SigDB3 (DBReader k tmv) -> do
-                addOne db_read
-                val <- gets (Map.lookup k)
-                liftIO $ putMVar tmv val
+dbServer = serverHelper @SigDB @DB $ \case
+    SigDB1 (DBwrite k v) -> do
+        addOne db_write
+        modify (Map.insert k v)
+    SigDB2 (GetAllMetric tmv) -> do
+        am <- getAll @DBmetric Proxy
+        liftIO $ putMVar tmv am
+    SigDB3 (DBReader k tmv) -> do
+        addOne db_read
+        val <- gets (Map.lookup k)
+        liftIO $ putMVar tmv val
 
 --- log server 
+
 type LogType = Sum SigLog Log
 
 makeMetrics "LogMetric" ["log_total"]
@@ -130,17 +130,15 @@ makeMetrics "LogMetric" ["log_total"]
 logServer
     :: (Has (Reader (Chan LogType) :+: Metric LogMetric) sig m, MonadIO m)
     => m ()
-logServer = forever $ do
-    serverHelper @SigLog @Log $ \case
-        Sum sl -> case sl of
-            SigLog1 (LogMessage s) -> do
-                addOne log_total
-                liftIO $ do
-                    putStr "log thread print: "
-                    print s
-            SigLog2 (GetAllMetric tmv) -> do
-                am <- getAll @LogMetric Proxy
-                liftIO $ putMVar tmv am
+logServer = serverHelper @SigLog @Log $ \case
+    SigLog1 (LogMessage s) -> do
+        addOne log_total
+        liftIO $ do
+            putStr "log thread print: "
+            print s
+    SigLog2 (GetAllMetric tmv) -> do
+        am <- getAll @LogMetric Proxy
+        liftIO $ putMVar tmv am
 
 ---- Some server
 
@@ -153,20 +151,17 @@ server
        , MonadIO m
        )
     => m ()
-server = forever $ do
-    serverHelper @SigMessage @T
-        $ \case
-              Sum sm -> case sm of
-                  SigMessage1 (Message1 a b) -> do
-                      addOne m1
-                      liftIO $ do
-                          putStr "  receive message1: "
-                          print a
-                          putStrLn $ "  send respon: " ++ (a ++ " received")
-                          putMVar b (a ++ " received")
-                  SigMessage2 (GetAllMetric tmv) -> do
-                      am <- getAll @SomeMetric Proxy
-                      liftIO $ putMVar tmv am
+server = serverHelper @SigMessage @T $ \case
+    SigMessage1 (Message1 a b) -> do
+        addOne m1
+        liftIO $ do
+            putStr "  receive message1: "
+            print a
+            putStrLn $ "  send respon: " ++ (a ++ " received")
+            putMVar b (a ++ " received")
+    SigMessage2 (GetAllMetric tmv) -> do
+        am <- getAll @SomeMetric Proxy
+        liftIO $ putMVar tmv am
 
 ---- 
 runExample :: IO (Either Stop a)
