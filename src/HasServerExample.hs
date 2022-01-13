@@ -236,11 +236,18 @@ server = serverHelper $ \case
 makeMetrics "AddMetric" ["add_total"]
 
 addServer
-    :: (Has (Reader (Chan (Some SigAdd)) :+: Metric AddMetric) sig m, MonadIO m)
+    :: ( HasLabelled "log" (HasServer SigLog '[LogMessage]) sig m
+       , Has (Reader (Chan (Some SigAdd)) :+: Metric AddMetric) sig m
+       , MonadIO m
+       )
     => m ()
 addServer = serverHelper $ \case
-    SigAdd1 Add1               -> inc add_total
-    SigAdd2 Sub1               -> dec add_total
+    SigAdd1 Add1 -> do
+        inc add_total
+        cast @"log" $ LogMessage "addServer" "add 1"
+    SigAdd2 Sub1               -> do 
+         dec add_total
+         cast @"log" $ LogMessage "addServer" "sub 1"
     SigAdd3 (GetAllMetric tmv) -> do
         am <- getAll @AddMetric Proxy
         liftIO $ putMVar tmv am
@@ -271,7 +278,11 @@ runExample = do
     --- fork log server , need db server
     forkIO $ void $ runReader tlc $ runMetric @LogMetric logServer
 
-    forkIO $ void $ runReader addc $ runMetric @AddMetric addServer
+    forkIO
+        $ void
+        $ runHasServerWith @"log" tlc
+        $ runReader addc
+        $ runMetric @AddMetric addServer
 
     -- run client
     runHasServerWith @"Some" tc
