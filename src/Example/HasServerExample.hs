@@ -25,7 +25,7 @@ import           Data.Proxy
 import           GHC.TypeLits
 import           HasServer
 import           TH
-import           Metrics
+import           Metric
 import           System.Random
 import           Text.Read
 
@@ -68,7 +68,7 @@ data Sub1 = Sub1
 
 mkSigAndClass "SigAdd" [''Add1, ''Sub1, ''GetAllMetric]
 
-makeMetrics "ClientMetric" ["total_loop", "t_m1", "t_m2", "t_str"]
+mkMetric "ClientMetric" ["total_loop", "t_m1", "t_m2", "t_str"]
 
 client
     :: ( HasLabelledServer "Some" SigMessage '[Message1 , GetAllMetric] sig m
@@ -154,7 +154,7 @@ client = forever $ do
 
 ---- DB server
 
-makeMetrics "DBmetric" ["db_write", "db_read"]
+mkMetric "DBmetric" ["db_write", "db_read"]
 
 dbServer
     :: ( HasLabelledServer "log" SigLog '[LogMessage] sig m
@@ -193,7 +193,7 @@ dbServer = serverHelper $ \case
 
 --- log server 
 
-makeMetrics "LogMetric" ["log_total", "log_t"]
+mkMetric "LogMetric" ["log_total", "log_t"]
 
 logServer
     :: (Has (Reader (Chan (Some SigLog)) :+: Metric LogMetric) sig m, MonadIO m)
@@ -211,7 +211,7 @@ logServer = serverHelper $ \case
 
 ---- Some server
 
-makeMetrics "SomeMetric" ["m1", "m2", "m3", "m4", "putlog"]
+mkMetric "SomeMetric" ["m1", "m2", "m3", "m4", "putlog"]
 
 server
     :: ( HasLabelled "log" (HasServer SigLog '[LogMessage]) sig m
@@ -232,7 +232,7 @@ server = serverHelper $ \case
         am <- getAll @SomeMetric Proxy
         liftIO $ putMVar tmv am
 
-makeMetrics "AddMetric" ["add_total"]
+mkMetric "AddMetric" ["add_total"]
 
 addServer
     :: ( HasLabelled "log" (HasServer SigLog '[LogMessage]) sig m

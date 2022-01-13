@@ -37,7 +37,7 @@ import           Data.IntMap                    ( IntMap )
 import           Data.Kind
 import           Data.Traversable               ( for )
 import           Data.Void
-import           Metrics
+import           Metric
 import           Optics                         ( (^.)
                                                 , makeLenses
                                                 )
@@ -63,7 +63,7 @@ type WorkName = String
 
 data WorkError = WorkStop
 
-makeMetrics "WorkMetric" ["wm_allloops", "wm_inputs", "wm_outputs", "wm_errors"]
+mkMetric "WorkMetric" ["wm_allloops", "wm_inputs", "wm_outputs", "wm_errors"]
 
 workloop
     :: forall input output sig m
@@ -128,7 +128,7 @@ dynamciForkWork inc out works | inc == 0 && out == 0 = KillAWorker
                               | out - inc > 20       = KillAWorker
                               | otherwise            = NoOperate
 
-makeMetrics "ManMetric" ["mm_allworks", "mm_forkworks", "mm_killedworks"]
+mkMetric "ManMetric" ["mm_allworks", "mm_forkworks", "mm_killedworks"]
 
 manage
     :: ( Has (State WorkManState :+: Fresh :+: Metric ManMetric) sig m
@@ -209,7 +209,7 @@ data ManManState = ManManState
     }
 makeLenses ''ManManState
 
-makeMetrics "ManManMetric" ["mmm_allmanager", "mmm_pipe"]
+mkMetric "ManManMetric" ["mmm_allmanager", "mmm_pipe"]
 
 runFlow
     :: (Has (State ManManState :+: Metric ManManMetric) sig m, MonadIO m)

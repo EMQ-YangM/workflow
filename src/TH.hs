@@ -1,7 +1,10 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DataKinds #-}
-module TH where
+module TH
+    ( mkSigAndClass
+    , mkMetric
+    ) where
 
 import           Control.Concurrent
 import           Data.Maybe
@@ -14,7 +17,6 @@ mkSigAndClass sname gs = do
     cls <- mkClass sname gs
     ins <- mkTypeIns sname gs
     pure $ sig ++ cls ++ ins
-
 
 mkSig :: String -> [Name] -> Q [Dec]
 mkSig sname gs = do
@@ -70,8 +72,8 @@ mkTypeIns sname gs = do
             )
     pure [dec]
 
-makeMetrics :: String -> [String] -> Q [Dec]
-makeMetrics bn ls = do
+mkMetric :: String -> [String] -> Q [Dec]
+mkMetric bn ls = do
     classTypeDef <- fromMaybe (error "you need impore Data.Default.Class ")
         <$> lookupTypeName "Default"
     classTypeLen <- fromJust <$> lookupTypeName "Vlength"

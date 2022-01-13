@@ -53,7 +53,7 @@ import           GHC.TypeLits                   ( ErrorMessage
                                                 , Symbol
                                                 , TypeError
                                                 )
-import           Metrics
+import           Metric
 import           Unsafe.Coerce                  ( unsafeCoerce )
 
 data Sum f (r :: [*]) where
