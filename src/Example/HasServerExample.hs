@@ -24,7 +24,7 @@ import qualified Data.Map                      as Map
 import           Data.Proxy
 import           GHC.TypeLits
 import           HasServer
-import           HasServerTH
+import           TH
 import           Metrics
 import           System.Random
 import           Text.Read

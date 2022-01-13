@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DataKinds #-}
-module HasServerTH where
+module TH where
 
 import           Control.Concurrent
 import           Data.Maybe
@@ -69,3 +69,48 @@ mkTypeIns sname gs = do
                       (foldr AppT PromotedNilT ds)
             )
     pure [dec]
+
+makeMetrics :: String -> [String] -> Q [Dec]
+makeMetrics bn ls = do
+    classTypeDef <- fromMaybe (error "you need impore Data.Default.Class ")
+        <$> lookupTypeName "Default"
+    classTypeLen <- fromJust <$> lookupTypeName "Vlength"
+
+    let contTypeV = mkName bn
+    methodDef <- fromMaybe (error "you need impore Data.Default.Class ")
+        <$> lookupValueName "def"
+    methodVlen <- fromJust <$> lookupValueName "vlength"
+
+    let vVal = mkName bn
+    kVal <- fromJust <$> lookupValueName "K"
+    let aal = foldl (\acc var -> AppE acc (ConE var))
+                    (ConE vVal)
+                    (replicate (Prelude.length ls) kVal)
+    let iDec = InstanceD Nothing
+                         []
+                         (AppT (ConT classTypeDef) (ConT contTypeV))
+                         [mDec]
+        mDec  = ValD (VarP methodDef) (NormalB aal) []
+
+        iDec1 = InstanceD Nothing
+                          []
+                          (AppT (ConT classTypeLen) (ConT contTypeV))
+                          [iFun]
+        iFun = FunD
+            methodVlen
+            [ Clause [WildP]
+                     (NormalB (LitE (IntegerL $ fromIntegral $ length ls)))
+                     []
+            ]
+
+    kType <- fromJust <$> lookupTypeName "K"
+    let ddd  = DataD [] (mkName bn) [] Nothing [cons] []
+        cons = RecC
+            (mkName bn)
+            [ ( mkName b
+              , Bang NoSourceUnpackedness NoSourceStrictness
+              , AppT (ConT kType) (LitT (StrTyLit (show a)))
+              )
+            | (a, b) <- zip [0, 1 ..] ls
+            ]
+    pure [ddd, iDec, iDec1]

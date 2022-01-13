@@ -22,7 +22,7 @@ library
     exposed-modules:  WorkFlow
                     , Metrics
                     , HasServer
-                    , HasServerTH
+                    , TH
                     , Example.HasServerExample
 
     -- Modules included in this library but not exported.

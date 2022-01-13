@@ -43,6 +43,7 @@ import           Optics                         ( (^.)
                                                 )
 import           System.Random
 import           System.Timeout                 ( timeout )
+import           TH
 
 type Counter = IORef Int
 
@@ -142,7 +143,7 @@ manage
     -> m ()
 manage f inputChan inputChanCounter outputChan outputChanCounter threadCounter
     = forever $ do
-        inc1   <- liftIO $ readIORef inputChanCounter
+        inc1  <- liftIO $ readIORef inputChanCounter
         out   <- liftIO $ readIORef outputChanCounter
         works <- gets (IntMap.size . allWorks)
         liftIO $ writeIORef threadCounter works
