@@ -23,7 +23,6 @@ library
                     , Metrics
                     , HasServer
                     , HasServerTH
-                    , Example.MetricsExample
                     , Example.HasServerExample
 
     -- Modules included in this library but not exported.
