@@ -24,6 +24,7 @@ module Metric
     , Vec(..)
     , K(..)
     , Vlength(..)
+    , module Data.Default.Class
     ) where
 
 import           Control.Carrier.Reader         ( Algebra

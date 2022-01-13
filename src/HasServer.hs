@@ -32,6 +32,7 @@ import           Control.Concurrent             ( Chan
                                                 , takeMVar
                                                 , writeChan
                                                 )
+import           Control.Concurrent.MVar        ( putMVar )
 import           Control.Effect.Labelled        ( type (:+:)(..)
                                                 , Algebra(..)
                                                 , Has
@@ -180,3 +181,6 @@ serverHelper f = forever $ do
     tc     <- ask @(Chan (Some f))
     Some v <- liftIO $ readChan tc
     f v
+
+resp :: (MonadIO m) => MVar a -> a -> m ()
+resp tmv a = liftIO $ putMVar tmv a

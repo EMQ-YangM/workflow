@@ -17,8 +17,6 @@ import           Control.Concurrent
 import           Control.Effect.Labelled
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Default.Class
-import           Data.Kind
 import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
 import           Data.Proxy
@@ -173,22 +171,22 @@ dbServer = serverHelper $ \case
         cast @"log" (LogMessage "dbServer" "write DB")
     SigDB2 (GetAllMetric tmv) -> do
         am <- getAll @DBmetric Proxy
-        liftIO $ putMVar tmv am
+        resp tmv am
     SigDB3 (GetUser k tmv) -> do
         inc db_read
         val <- gets (Map.lookup k)
-        liftIO $ putMVar tmv val
+        resp tmv val
         cast @"log" (LogMessage "dbServer" "read DB")
     SigDB4 (GetDBSize tmv) -> do
         v <- gets @(Map Int String) Map.size
-        liftIO $ putMVar tmv v
+        resp tmv v
     SigDB5 (GetAllUser tmv) -> do
         v <- gets @(Map Int String) Map.keys
-        liftIO $ putMVar tmv v
+        resp tmv v
     SigDB6 (DeleteAll tmv) -> do
         v <- gets @(Map Int String) Map.size
         put @(Map Int String) Map.empty
-        liftIO $ putMVar tmv v
+        resp tmv v
         cast @"log" (LogMessage "dbServer" "delete all user")
 
 --- log server 
@@ -207,7 +205,7 @@ logServer = serverHelper $ \case
     SigLog2 (GetAllMetric tmv) -> do
         inc log_t
         am <- getAll @LogMetric Proxy
-        liftIO $ putMVar tmv am
+        resp tmv am
 
 ---- Some server
 
@@ -227,10 +225,10 @@ server = serverHelper $ \case
     SigMessage1 (Message1 a b) -> do
         inc m1
         cast @"log" (LogMessage "server" a)
-        liftIO $ putMVar b a
+        resp b a
     SigMessage2 (GetAllMetric tmv) -> do
         am <- getAll @SomeMetric Proxy
-        liftIO $ putMVar tmv am
+        resp tmv am
 
 mkMetric "AddMetric" ["add_total"]
 
@@ -249,7 +247,7 @@ addServer = serverHelper $ \case
          cast @"log" $ LogMessage "addServer" "sub 1"
     SigAdd3 (GetAllMetric tmv) -> do
         am <- getAll @AddMetric Proxy
-        liftIO $ putMVar tmv am
+        resp tmv am
 
 ---- 
 runExample :: IO (Either Stop a)

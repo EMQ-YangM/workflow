@@ -24,6 +24,7 @@ library
                     , HasServer
                     , TH
                     , Example.HasServerExample
+                    , Example.E1
 
     -- Modules included in this library but not exported.
     -- other-modules:
