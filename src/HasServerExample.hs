@@ -41,6 +41,7 @@ data WriteUser = WriteUser Int String
 data GetUser = GetUser Int (MVar (Maybe String))
 newtype GetDBSize = GetDBSize (MVar Int)
 newtype GetAllUser = GetAllUser (MVar [Int])
+newtype DeleteAll = DeleteAll (MVar Int)
 
 data LogMessage = LogMessage String String
 
@@ -55,6 +56,7 @@ mkSigAndClass "SigDB"
   , ''GetUser
   , ''GetDBSize
   , ''GetAllUser
+  , ''DeleteAll
   ]
 
 mkSigAndClass "SigLog"
@@ -70,7 +72,13 @@ client
        , HasLabelledServer
              "db"
              SigDB
-             '[WriteUser , GetUser , GetDBSize , GetAllMetric , GetAllUser]
+             '[ WriteUser
+              , GetUser
+              , GetDBSize
+              , GetAllMetric
+              , GetAllUser
+              , DeleteAll
+              ]
              sig
              m
        , Has (Error Stop :+: Metric ClientMetric) sig m
@@ -85,6 +93,9 @@ client = forever $ do
         ["size"] -> do
             v <- call @"db" GetDBSize
             cast @"log" $ LogMessage "client" $ "DB size: " ++ show v
+        "deleteAll" : _ -> do
+            v <- call @"db" DeleteAll
+            cast @"log" $ LogMessage "client" $ "DB dlete total: " ++ show v
         "getAllUser" : _ -> do
             v <- call @"db" GetAllUser
             cast @"log" $ LogMessage "client" $ "result: " ++ show v
@@ -164,6 +175,11 @@ dbServer = serverHelper $ \case
     SigDB5 (GetAllUser tmv) -> do
         v <- gets @(Map Int String) Map.keys
         liftIO $ putMVar tmv v
+    SigDB6 (DeleteAll tmv) -> do
+        v <- gets @(Map Int String) Map.size
+        put @(Map Int String) Map.empty
+        liftIO $ putMVar tmv v
+        cast @"log" (LogMessage "dbServer" "delete all user")
 
 --- log server 
 
@@ -177,7 +193,7 @@ logServer = serverHelper $ \case
         v <- getVal log_total
         inc log_total
         liftIO $ do
-            putStrLn $ show v ++ ": " ++ from ++ " : " ++ s
+            putStrLn $ show v ++ ": " ++ from ++ ": " ++ s
     SigLog2 (GetAllMetric tmv) -> do
         inc log_t
         am <- getAll @LogMetric Proxy
@@ -229,10 +245,7 @@ runExample = do
         $ runState @(Map Int String) Map.empty dbServer
 
     --- fork log server , need db server
-    forkIO
-        $ void
-        $ runReader tlc
-        $ runMetric @LogMetric logServer
+    forkIO $ void $ runReader tlc $ runMetric @LogMetric logServer
 
     -- run client
     runHasServerWith @"Some" tc
