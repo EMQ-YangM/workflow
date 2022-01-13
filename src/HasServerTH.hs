@@ -1,5 +1,4 @@
-{-# LANGUAGE GADTs, TemplateHaskell #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DataKinds #-}
 module HasServerTH where
@@ -69,6 +68,4 @@ mkTypeIns sname gs = do
                       (AppT (ConT toListT) (ConT (mkName sname)))
                       (foldr AppT PromotedNilT ds)
             )
-
-
     pure [dec]
