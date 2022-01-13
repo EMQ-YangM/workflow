@@ -3,7 +3,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 
-module MetricsExample where
+module Example.MetricsExample where
 
 import           Control.Algebra
 import           Control.Monad

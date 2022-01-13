@@ -10,7 +10,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-module HasServerExample where
+module Example.HasServerExample where
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict

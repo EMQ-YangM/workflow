@@ -15,7 +15,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NamedFieldPuns, TemplateHaskell #-}
 
-module Type where
+module WorkFlow where
 
 import           Control.Algebra
 import           Control.Carrier.Error.Either

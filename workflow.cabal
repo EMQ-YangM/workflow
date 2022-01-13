@@ -19,13 +19,12 @@ maintainer:         yangm@emqx.io
 extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:  MyLib
-                    , Type
+    exposed-modules:  WorkFlow
                     , Metrics
-                    , MetricsExample
                     , HasServer
                     , HasServerTH
-                    , HasServerExample
+                    , Example.MetricsExample
+                    , Example.HasServerExample
 
     -- Modules included in this library but not exported.
     -- other-modules:
