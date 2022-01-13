@@ -64,6 +64,11 @@ mkSigAndClass "SigLog"
   , ''GetAllMetric
   ]
 
+data Add1 = Add1
+data Sub1 = Sub1
+
+mkSigAndClass "SigAdd" [''Add1, ''Sub1, ''GetAllMetric]
+
 makeMetrics "ClientMetric" ["total_loop", "t_m1", "t_m2", "t_str"]
 
 client
@@ -81,18 +86,24 @@ client
               ]
              sig
              m
+       , HasLabelledServer "add" SigAdd '[Add1 , Sub1 , GetAllMetric] sig m
        , Has (Error Stop :+: Metric ClientMetric) sig m
        , MonadIO m
        )
     => m a
 client = forever $ do
     li <- liftIO getLine
-    -- cast @"log" (LogMessage "client" li)
-
     case words li of
         ["size"] -> do
             v <- call @"db" GetDBSize
             cast @"log" $ LogMessage "client" $ "DB size: " ++ show v
+        "+1" : _ -> do
+            cast @"add" Add1
+        "-1" : _ -> do
+            cast @"add" Sub1
+        "num" : _ -> do
+            v <- call @"add" GetAllMetric
+            cast @"log" $ LogMessage "client" $ "num is " ++ show v
         "deleteAll" : _ -> do
             v <- call @"db" DeleteAll
             cast @"log" $ LogMessage "client" $ "DB dlete total: " ++ show v
@@ -222,12 +233,25 @@ server = serverHelper $ \case
         am <- getAll @SomeMetric Proxy
         liftIO $ putMVar tmv am
 
+makeMetrics "AddMetric" ["add_total"]
+
+addServer
+    :: (Has (Reader (Chan (Some SigAdd)) :+: Metric AddMetric) sig m, MonadIO m)
+    => m ()
+addServer = serverHelper $ \case
+    SigAdd1 Add1               -> inc add_total
+    SigAdd2 Sub1               -> dec add_total
+    SigAdd3 (GetAllMetric tmv) -> do
+        am <- getAll @AddMetric Proxy
+        liftIO $ putMVar tmv am
+
 ---- 
 runExample :: IO (Either Stop a)
 runExample = do
-    tc  <- newChan
-    dbc <- newChan
-    tlc <- newChan
+    tc   <- newChan
+    dbc  <- newChan
+    tlc  <- newChan
+    addc <- newChan
     --- fork some server , need log server
     forkIO
         $ void
@@ -247,9 +271,12 @@ runExample = do
     --- fork log server , need db server
     forkIO $ void $ runReader tlc $ runMetric @LogMetric logServer
 
+    forkIO $ void $ runReader addc $ runMetric @AddMetric addServer
+
     -- run client
     runHasServerWith @"Some" tc
         $ runHasServerWith @"db" dbc
         $ runHasServerWith @"log" tlc
+        $ runHasServerWith @"add" addc
         $ runMetric @ClientMetric
         $ runError @Stop client
