@@ -28,6 +28,7 @@ import           HasServer
 import           HasServerTH
 import           Metrics
 import           System.Random
+import           Text.Read
 
 data Message1  where
      Message1 ::String -> MVar String -> Message1
@@ -36,11 +37,12 @@ data Message1  where
 data Stop = Stop
 newtype GetAllMetric = GetAllMetric (MVar [Int])
 
-data DBwrite = DBwrite Int String
-data DBReader = DBReader Int (MVar (Maybe String))
+data WriteUser = WriteUser Int String
+data GetUser = GetUser Int (MVar (Maybe String))
 newtype GetDBSize = GetDBSize (MVar Int)
+newtype GetAllUser = GetAllUser (MVar [Int])
 
-newtype LogMessage = LogMessage String
+data LogMessage = LogMessage String String
 
 mkSigAndClass "SigMessage"
   [ ''Message1
@@ -48,10 +50,11 @@ mkSigAndClass "SigMessage"
   ]
 
 mkSigAndClass "SigDB"
-  [ ''DBwrite
+  [ ''WriteUser
   , ''GetAllMetric
-  , ''DBReader
+  , ''GetUser
   , ''GetDBSize
+  , ''GetAllUser
   ]
 
 mkSigAndClass "SigLog"
@@ -67,7 +70,7 @@ client
        , HasLabelledServer
              "db"
              SigDB
-             '[DBwrite , GetAllMetric , DBReader , GetDBSize]
+             '[WriteUser , GetUser , GetDBSize , GetAllMetric , GetAllUser]
              sig
              m
        , Has (Error Stop :+: Metric ClientMetric) sig m
@@ -76,32 +79,57 @@ client
     => m a
 client = forever $ do
     li <- liftIO getLine
-    cast @"log" (LogMessage li)
+    -- cast @"log" (LogMessage "client" li)
 
-    case li of
-        "size" -> do
+    case words li of
+        ["size"] -> do
             v <- call @"db" GetDBSize
-            cast @"log" $ LogMessage $ "DB size: " ++ show v
+            cast @"log" $ LogMessage "client" $ "DB size: " ++ show v
+        "getAllUser" : _ -> do
+            v <- call @"db" GetAllUser
+            cast @"log" $ LogMessage "client" $ "result: " ++ show v
+        "writeUser" : idx : val -> do
+            let num = readMaybe @Int idx
+            case num of
+                Nothing -> liftIO $ print "input error"
+                Just n  -> do
+                    cast @"db" $ WriteUser n (concat val)
+        "getUser" : idx -> do
+            let num = readMaybe @Int (concat idx)
+            case num of
+                Nothing -> liftIO $ print "input error"
+                Just n  -> do
+                    v <- call @"db" (GetUser n)
+                    cast @"log" $ LogMessage "client" $ "result: " ++ show v
         _ -> do
             val <- call @"Some" (Message1 li)
-            cast @"log" $ LogMessage val
+            cast @"log" $ LogMessage "client" val
 
-    cast @"log" $ LogMessage "writeDB "
+            cast @"log" $ LogMessage "client" "writeDB "
 
-    idx <- liftIO randomIO
-    val <- liftIO $ replicateM 4 randomIO
-    cast @"db" (DBwrite idx val)
-    val <- call @"db" (DBReader idx)
-    cast @"log" $ LogMessage $ "readDB result is: " ++ show val
+            idx <- liftIO randomIO
+            val <- liftIO $ replicateM 4 randomIO
+            cast @"db" (WriteUser idx val)
+            val <- call @"db" (GetUser idx)
+            cast @"log" $ LogMessage "client" $ "readDB result is: " ++ show val
 
-    allMetric <- call @"db" GetAllMetric
-    cast @"log" $ LogMessage $ "DB all metrics: " ++ show allMetric
+            allMetric <- call @"db" GetAllMetric
+            cast @"log"
+                $  LogMessage "client"
+                $  "DB all metrics: "
+                ++ show allMetric
 
-    allMetric <- call @"Some" GetAllMetric
-    cast @"log" $ LogMessage $ "Some all metrics: " ++ show allMetric
+            allMetric <- call @"Some" GetAllMetric
+            cast @"log"
+                $  LogMessage "client"
+                $  "Some all metrics: "
+                ++ show allMetric
 
-    allMetric <- call @"log" GetAllMetric
-    cast @"log" $ LogMessage $ "log all metrics: " ++ show allMetric
+            allMetric <- call @"log" GetAllMetric
+            cast @"log"
+                $  LogMessage "client"
+                $  "log all metrics: "
+                ++ show allMetric
 
 ---- DB server
 
@@ -118,20 +146,23 @@ dbServer
        )
     => m ()
 dbServer = serverHelper $ \case
-    SigDB1 (DBwrite k v) -> do
+    SigDB1 (WriteUser k v) -> do
         inc db_write
         modify (Map.insert k v)
-        cast @"log" (LogMessage "write DB")
+        cast @"log" (LogMessage "dbServer" "write DB")
     SigDB2 (GetAllMetric tmv) -> do
         am <- getAll @DBmetric Proxy
         liftIO $ putMVar tmv am
-    SigDB3 (DBReader k tmv) -> do
+    SigDB3 (GetUser k tmv) -> do
         inc db_read
         val <- gets (Map.lookup k)
         liftIO $ putMVar tmv val
-        cast @"log" (LogMessage "read DB")
+        cast @"log" (LogMessage "dbServer" "read DB")
     SigDB4 (GetDBSize tmv) -> do
         v <- gets @(Map Int String) Map.size
+        liftIO $ putMVar tmv v
+    SigDB5 (GetAllUser tmv) -> do
+        v <- gets @(Map Int String) Map.keys
         liftIO $ putMVar tmv v
 
 --- log server 
@@ -142,11 +173,11 @@ logServer
     :: (Has (Reader (Chan (Some SigLog)) :+: Metric LogMetric) sig m, MonadIO m)
     => m ()
 logServer = serverHelper $ \case
-    SigLog1 (LogMessage s) -> do
+    SigLog1 (LogMessage from s) -> do
         v <- getVal log_total
         inc log_total
         liftIO $ do
-            putStrLn $ show v ++ ": " ++ s
+            putStrLn $ show v ++ ": " ++ from ++ " : " ++ s
     SigLog2 (GetAllMetric tmv) -> do
         inc log_t
         am <- getAll @LogMetric Proxy
@@ -169,7 +200,7 @@ server
 server = serverHelper $ \case
     SigMessage1 (Message1 a b) -> do
         inc m1
-        cast @"log" (LogMessage $ "server to log: " ++ a)
+        cast @"log" (LogMessage "server" a)
         liftIO $ putMVar b a
     SigMessage2 (GetAllMetric tmv) -> do
         am <- getAll @SomeMetric Proxy
@@ -197,8 +228,11 @@ runExample = do
         $ runMetric @DBmetric
         $ runState @(Map Int String) Map.empty dbServer
 
-    --- fork log server 
-    forkIO $ void $ runReader tlc $ runMetric @LogMetric logServer
+    --- fork log server , need db server
+    forkIO
+        $ void
+        $ runReader tlc
+        $ runMetric @LogMetric logServer
 
     -- run client
     runHasServerWith @"Some" tc

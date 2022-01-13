@@ -65,21 +65,37 @@ class ToSig a b where
 data Some f where
     Some ::f a -> Some f
 
-type family Elem (t :: Type) (ts :: [Type]) :: Constraint where
-    Elem t '[] = TypeError ('Text "Dec error: " :<>: 'ShowType t ':<>: 'Text " : method not support")
-    Elem t (t ': xs) = ()
-    Elem t (t1 ': xs) = Elem t xs
+type family Elem (name :: Symbol) (t :: Type) (ts :: [Type]) :: Constraint where
+    Elem name t '[] = TypeError ('Text "server ":<>:
+                                 'ShowType name ':<>:
+                                 'Text " not add " :<>:
+                                 'ShowType t :<>:
+                                 'Text " to it method list"
+                                 )
+    Elem name t (t ': xs) = ()
+    Elem name t (t1 ': xs) = Elem name t xs
 
-type family Elems (ls :: [Type]) (ts :: [Type]) :: Constraint where
-    Elems (l ': ls) ts = (Elem l ts, Elems ls ts)
-    Elems '[] ts = ()
+type family ElemO (name :: Symbol) (t :: Type) (ts :: [Type]) :: Constraint where
+    ElemO name t '[] = TypeError ('Text "server ":<>:
+                                 'ShowType name ':<>:
+                                 'Text " not support method " :<>:
+                                 'ShowType t
+                                 )
+    ElemO name t (t ': xs) = ()
+    ElemO name t (t1 ': xs) = ElemO name t xs
+
+type family Elems (name :: Symbol) (ls :: [Type]) (ts :: [Type]) :: Constraint where
+    Elems name (l ': ls) ts = (ElemO name l ts, Elems name ls ts)
+    Elems name '[] ts = ()
 
 type family ToList (a :: (Type -> Type)) :: [Type]
 
 type HasLabelledServer (serverName :: Symbol) s ts sig m
-    = (Elems ts (ToList s), HasLabelled serverName (HasServer s ts) sig m)
+    = ( Elems serverName ts (ToList s)
+      , HasLabelled serverName (HasServer s ts) sig m
+      )
 
-inject :: (ToSig e f, Elem e r) => e -> Sum f r
+inject :: ToSig e f => e -> Sum f r
 inject = Sum . toSig
 
 type HasServer :: (Type -> Type)
@@ -88,13 +104,13 @@ type HasServer :: (Type -> Type)
             -> Type
             -> Type
 data HasServer s ts m a where
-    SendReq ::(Elem t ts, ToSig t s) =>t -> HasServer s ts m ()
+    SendReq ::(ToSig t s) =>t -> HasServer s ts m ()
 
 sendReq
     :: forall serverName s ts sig m t
-     . ( HasLabelled (serverName :: Symbol) (HasServer s ts) sig m
-       , Elem t ts
+     . ( Elem serverName t ts
        , ToSig t s
+       , HasLabelled (serverName :: Symbol) (HasServer s ts) sig m
        )
     => t
     -> m ()
@@ -102,10 +118,10 @@ sendReq t = sendLabelled @serverName (SendReq t)
 
 call
     :: forall serverName s ts sig m e b
-     . ( HasLabelled (serverName :: Symbol) (HasServer s ts) sig m
-       , Elem e ts
+     . ( Elem serverName e ts
        , ToSig e s
        , MonadIO m
+       , HasLabelled (serverName :: Symbol) (HasServer s ts) sig m
        )
     => (MVar b -> e)
     -> m b
@@ -117,10 +133,10 @@ call f = do
 
 cast
     :: forall serverName s ts sig m e b
-     . ( HasLabelled (serverName :: Symbol) (HasServer s ts) sig m
-       , Elem e ts
+     . ( Elem serverName e ts
        , ToSig e s
        , MonadIO m
+       , HasLabelled (serverName :: Symbol) (HasServer s ts) sig m
        )
     => e
     -> m ()
