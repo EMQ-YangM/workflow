@@ -18,6 +18,7 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Foldable                  ( for_ )
 import           Example.E1
+import           Example.Type
 import           HasServer
 import           HasWorkGroup            hiding ( resp )
 import           Metric
@@ -25,7 +26,6 @@ import           System.Random
 import           TH
 import           Type
 
-data Stop = Stop
 newtype WorkInfo = WorkInfo (MVar (String, Int))
 newtype AllCycle = AllCycle (MVar (Int, Int))
 
@@ -37,7 +37,7 @@ mkSigAndClass "SigCom"
 
 manager
     :: ( HasWorkGroup "work" SigCom '[Stop , WorkInfo , AllCycle] sig m
-       , HasServer "log" SigLog '[Log , Allmetric] sig m
+       , HasServer "log" SigLog1 '[Log , Allmetric] sig m
        , MonadIO m
        )
     => m ()
@@ -63,7 +63,7 @@ data WorkEnv = WorkEnv
 mkMetric "WorkMetric" ["w_total"]
 
 work
-    :: ( HasServer "log" SigLog '[Log] sig m
+    :: ( HasServer "log" SigLog1 '[Log] sig m
        , Has
              ( ToWrokMessage SigCom :+: Reader WorkEnv :+: Error Stop :+: Metric WorkMetric
              )
@@ -72,7 +72,7 @@ work
        , MonadIO m
        )
     => m ()
-work = workHelper @SigCom
+work = forever $ workHelper @SigCom
     (\case
         SigCom1 Stop -> do
             WorkEnv a b <- ask
@@ -91,13 +91,13 @@ work = workHelper @SigCom
         inc w_total
         cast @"log" (Log L1 $ "work is running, it's id " ++ a)
         liftIO $ do
-            i <- randomRIO (10000, 1000000)
+            i <- randomRIO (100, 10000)
             threadDelay i
     )
 
 runAll :: IO ()
 runAll = void $ do
-    tcs     <- replicateM 11 newTChanIO
+    tcs     <- replicateM 10 newTChanIO
     logChan <- newTChanIO
 
     forkIO $ void $ runWithServer @"log" logChan $ runWithWorkGroup @"work"
@@ -114,7 +114,7 @@ runAll = void $ do
             $ runError @Stop work
 
 
-    forkIO $ void $ runReader logChan $ runMetric @LogMetric logServer
+    forkIO $ void $ runReader logChan $ runMetric @LogMetric1 logServer
 
     forever $ do
         liftIO $ threadDelay 1000000

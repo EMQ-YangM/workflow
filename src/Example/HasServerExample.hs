@@ -23,6 +23,7 @@ import qualified Data.IntMap                   as IntMap
 import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
 import           Data.Proxy
+import           Example.Type
 import           GHC.TypeLits
 import           HasServer
 import           Metric
@@ -30,61 +31,6 @@ import           System.Random
 import           TH
 import           Text.Read
 import           Type
-
-data Message1  where
-     Message1 ::String -> MVar String -> Message1
-    --  Message1 ::String -> MVar String %1 -> Message1
-    --                   add linear type  (call function, server must response)
-data Stop = Stop
-newtype GetAllMetric = GetAllMetric (MVar [Int])
-
-data WriteUser = WriteUser Int String
-data GetUser = GetUser Int (MVar (Maybe String))
-newtype GetDBSize = GetDBSize (MVar Int)
-newtype GetAllUser = GetAllUser (MVar [Int])
-newtype DeleteAll = DeleteAll (MVar Int)
-
-data LogMessage = LogMessage String String
-
-mkSigAndClass "SigMessage"
-  [ ''Message1
-  , ''GetAllMetric
-  ]
-
-mkSigAndClass "SigDB"
-  [ ''WriteUser
-  , ''GetAllMetric
-  , ''GetUser
-  , ''GetDBSize
-  , ''GetAllUser
-  , ''DeleteAll
-  ]
-
-mkSigAndClass "SigLog"
-  [ ''LogMessage
-  , ''GetAllMetric
-  ]
-
-type Token = String
-
-data GetToken = GetToken Int (MVar String)
-data VerifyToken = VerifyToken String (MVar Bool)
-
-mkSigAndClass "SigAuth"
-  [ ''GetToken
-  , ''VerifyToken
-  ]
-
--- Auth
--- getToken
--- verifyToken
-
-data Add1 = Add1
-data Sub1 = Sub1
-
-mkSigAndClass "SigAdd" [''Add1, ''Sub1, ''GetAllMetric]
-
-mkMetric "ClientMetric" ["total_loop", "t_m1", "t_m2", "t_str"]
 
 client
     :: ( HasServer "Some" SigMessage '[Message1 , GetAllMetric] sig m
@@ -177,8 +123,6 @@ client = forever $ do
 
 ---- DB server
 
-mkMetric "DBmetric" ["db_write", "db_read"]
-
 dbServer
     :: ( HasServer "log" SigLog '[LogMessage] sig m
        , Has
@@ -189,7 +133,7 @@ dbServer
        , MonadIO m
        )
     => m ()
-dbServer = serverHelper $ \case
+dbServer = forever $ serverHelper $ \case
     SigDB1 (WriteUser k v) -> do
         inc db_write
         modify (Map.insert k v)
@@ -216,12 +160,10 @@ dbServer = serverHelper $ \case
 
 --- log server 
 
-mkMetric "LogMetric" ["log_total", "log_t"]
-
 logServer
     :: (Has (ToServerMessage SigLog :+: Metric LogMetric) sig m, MonadIO m)
     => m ()
-logServer = serverHelper $ \case
+logServer = forever $ serverHelper $ \case
     SigLog1 (LogMessage from s) -> do
         v <- getVal log_total
         inc log_total
@@ -245,7 +187,7 @@ server
        , MonadIO m
        )
     => m ()
-server = serverHelper $ \case
+server = forever $ serverHelper $ \case
     SigMessage1 (Message1 a b) -> do
         inc m1
         cast @"log" (LogMessage "server" a)
@@ -254,15 +196,13 @@ server = serverHelper $ \case
         am <- getAll @SomeMetric Proxy
         resp tmv am
 
-mkMetric "AddMetric" ["add_total"]
-
 addServer
     :: ( HasServer "log" SigLog '[LogMessage] sig m
        , Has (ToServerMessage SigAdd :+: Metric AddMetric) sig m
        , MonadIO m
        )
     => m ()
-addServer = serverHelper $ \case
+addServer = forever $ serverHelper $ \case
     SigAdd1 Add1 -> do
         inc add_total
         cast @"log" $ LogMessage "addServer" "add 1"
@@ -277,7 +217,7 @@ addServer = serverHelper $ \case
 authServer
     :: (Has (ToServerMessage SigAuth :+: State [String]) sig m, MonadIO m)
     => m ()
-authServer = serverHelper @SigAuth $ \case
+authServer = forever $ serverHelper @SigAuth $ \case
     SigAuth1 (GetToken i tmv) -> do
         modify (show i :)
         resp tmv (show i)

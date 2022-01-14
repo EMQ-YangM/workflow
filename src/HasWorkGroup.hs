@@ -12,23 +12,51 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ConstraintKinds #-}
 
 module HasWorkGroup where
-import           Control.Carrier.Reader
-import           Control.Concurrent
-import           Control.Concurrent.STM
-import           Control.Effect.Labelled
-import           Control.Monad
-import           Control.Monad.IO.Class
-import           Data.Foldable
+import           Control.Carrier.Reader         ( Algebra
+                                                , Has
+                                                , Reader
+                                                , ReaderC(..)
+                                                , ask
+                                                , runReader
+                                                )
+import           Control.Concurrent             ( MVar
+                                                , newEmptyMVar
+                                                , putMVar
+                                                , takeMVar
+                                                )
+import           Control.Concurrent.STM         ( TChan
+                                                , atomically
+                                                , isEmptyTChan
+                                                , readTChan
+                                                , writeTChan
+                                                )
+import           Control.Effect.Labelled        ( type (:+:)(..)
+                                                , Algebra(..)
+                                                , Has
+                                                , HasLabelled
+                                                , Labelled
+                                                , LabelledMember
+                                                , runLabelled
+                                                , sendLabelled
+                                                )
+import           Control.Monad                  ( forever )
+import           Control.Monad.IO.Class         ( MonadIO(..) )
 import           Data.IntMap                    ( IntMap )
 import qualified Data.IntMap                   as IntMap
-import           Data.Kind
+import           Data.Kind                      ( Type )
 import           Data.Traversable               ( for )
-import           GHC.TypeLits
-import           Type
+import           GHC.TypeLits                   ( Symbol )
+import           Type                           ( Elem
+                                                , Elems
+                                                , Some(..)
+                                                , Sum
+                                                , ToList
+                                                , ToSig
+                                                , inject
+                                                )
 import           Unsafe.Coerce                  ( unsafeCoerce )
 
 type HasWorkGroup (serverName :: Symbol) s ts sig m
@@ -142,7 +170,7 @@ workHelper
     => (forall s . f s -> m ())
     -> m ()
     -> m ()
-workHelper f w = forever $ do
+workHelper f w = do
     tc  <- ask @(TChan (Some f))
     isE <- liftIO $ atomically (isEmptyTChan tc)
     if isE then w else go tc

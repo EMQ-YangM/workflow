@@ -28,6 +28,7 @@ library
                     , Example.HasServerExample
                     , Example.E1
                     , Example.E2
+                    , Example.Type
 
     -- Modules included in this library but not exported.
     -- other-modules:

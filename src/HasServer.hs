@@ -147,7 +147,7 @@ serverHelper
      . (Has (ToServerMessage f) sig m, MonadIO m)
     => (forall s . f s -> m ())
     -> m ()
-serverHelper f = forever $ do
+serverHelper f = do
     tc     <- ask @(TChan (Some f))
     Some v <- liftIO $ atomically $ readTChan tc
     f v
