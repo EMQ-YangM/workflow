@@ -14,6 +14,7 @@ import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Concurrent
+import           Control.Concurrent.STM         ( newTChanIO )
 import           Control.Effect.Labelled
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -101,7 +102,7 @@ client
              sig
              m
        , HasServer "add" SigAdd '[Add1 , Sub1 , GetAllMetric] sig m
-       , HasServer "auth" SigAuth '[GetToken, VerifyToken] sig m
+       , HasServer "auth" SigAuth '[GetToken , VerifyToken] sig m
        , Has (Error Stop :+: Metric ClientMetric) sig m
        , MonadIO m
        )
@@ -257,7 +258,7 @@ mkMetric "AddMetric" ["add_total"]
 
 addServer
     :: ( HasServer "log" SigLog '[LogMessage] sig m
-       , Has (Reader (Chan (Some SigAdd)) :+: Metric AddMetric) sig m
+       , Has (ToServerMessage SigAdd :+: Metric AddMetric) sig m
        , MonadIO m
        )
     => m ()
@@ -287,11 +288,11 @@ authServer = serverHelper @SigAuth $ \case
 ---- 
 runExample :: IO (Either Stop a)
 runExample = do
-    tc    <- newChan
-    dbc   <- newChan
-    tlc   <- newChan
-    addc  <- newChan
-    authc <- newChan
+    tc    <- newTChanIO
+    dbc   <- newTChanIO
+    tlc   <- newTChanIO
+    addc  <- newTChanIO
+    authc <- newTChanIO
 
     --- fork auth server 
     forkIO $ void $ runState @[String] [] $ runServerWithChan @SigAuth

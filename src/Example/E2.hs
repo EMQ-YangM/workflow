@@ -37,7 +37,7 @@ mkSigAndClass "SigCom"
 
 manager
     :: ( HasWorkGroup "work" SigCom '[Stop , WorkInfo , AllCycle] sig m
-       , HasServer "log" SigLog '[Log, Allmetric] sig m
+       , HasServer "log" SigLog '[Log , Allmetric] sig m
        , MonadIO m
        )
     => m ()
@@ -51,7 +51,7 @@ manager = do
     liftIO $ threadDelay 1000000
     mcast @"work" [1 .. 10] Stop
 
-    v <- call @"log" Allmetric 
+    v <- call @"log" Allmetric
     cast @"log" (Log L1 $ show v)
 
 data WorkEnv = WorkEnv
@@ -90,7 +90,7 @@ work = workHelper @SigCom
         WorkEnv a b <- ask
         inc w_total
         cast @"log" (Log L1 $ "work is running, it's id " ++ a)
-        liftIO $ do 
+        liftIO $ do
             i <- randomRIO (10000, 1000000)
             threadDelay i
     )
@@ -98,7 +98,7 @@ work = workHelper @SigCom
 runAll :: IO ()
 runAll = void $ do
     tcs     <- replicateM 11 newTChanIO
-    logChan <- newChan
+    logChan <- newTChanIO
 
     forkIO $ void $ runWithServer @"log" logChan $ runWithWorkGroup @"work"
         (zip [1 ..] tcs)

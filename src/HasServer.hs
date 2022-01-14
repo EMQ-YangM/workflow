@@ -24,15 +24,21 @@ import           Control.Carrier.Reader         ( Algebra
                                                 , ask
                                                 , runReader
                                                 )
-import           Control.Concurrent             ( Chan
-                                                , MVar
-                                                , newChan
+import           Control.Concurrent             (
+                                                --  Chan
+                                                  MVar
+                                                -- , newChan
                                                 , newEmptyMVar
-                                                , readChan
+                                                -- , readChan
                                                 , takeMVar
-                                                , writeChan
+                                                -- , writeChan
                                                 )
 import           Control.Concurrent.MVar        ( putMVar )
+import           Control.Concurrent.STM         ( TChan
+                                                , atomically
+                                                , readTChan
+                                                , writeTChan
+                                                )
 import           Control.Effect.Labelled        ( type (:+:)(..)
                                                 , Algebra(..)
                                                 , Has
@@ -54,8 +60,14 @@ import           GHC.TypeLits                   ( ErrorMessage
                                                 , Symbol
                                                 , TypeError
                                                 )
-import           Metric
-import           Type
+import           Type                           ( Elem
+                                                , Elems
+                                                , Some(..)
+                                                , Sum
+                                                , ToList
+                                                , ToSig
+                                                , inject
+                                                )
 import           Unsafe.Coerce                  ( unsafeCoerce )
 
 type HasServer (serverName :: Symbol) s ts sig m
@@ -109,26 +121,26 @@ cast f = do
     -- liftIO $ putStrLn "send cast"
     sendReq @serverName f
 
-newtype RequestC s ts m a = RequestC { unRequestC :: ReaderC (Chan (Sum s ts)) m a }
+newtype RequestC s ts m a = RequestC { unRequestC :: ReaderC (TChan (Sum s ts)) m a }
   deriving (Functor, Applicative, Monad, MonadIO)
 
 instance (Algebra sig m, MonadIO m) => Algebra (Request s ts :+: sig) (RequestC s ts m) where
     alg hdl sig ctx = RequestC $ ReaderC $ \c -> case sig of
         L (SendReq t) -> do
-            liftIO $ writeChan c (inject t)
+            liftIO $ atomically $ writeTChan c (inject t)
             pure ctx
         R signa -> alg (runReader c . unRequestC . hdl) signa ctx
 -- client
 runWithServer
     :: forall serverName s ts m a
-     . Chan (Some s)
+     . TChan (Some s)
     -> Labelled (serverName :: Symbol) (RequestC s ts) m a
     -> m a
 runWithServer chan f =
     runReader (unsafeCoerce chan) $ unRequestC $ runLabelled f
 
 -- server 
-type ToServerMessage f = Reader (Chan (Some f))
+type ToServerMessage f = Reader (TChan (Some f))
 
 serverHelper
     :: forall f es sig m
@@ -136,11 +148,12 @@ serverHelper
     => (forall s . f s -> m ())
     -> m ()
 serverHelper f = forever $ do
-    tc     <- ask @(Chan (Some f))
-    Some v <- liftIO $ readChan tc
+    tc     <- ask @(TChan (Some f))
+    Some v <- liftIO $ atomically $ readTChan tc
     f v
 
-runServerWithChan :: forall f m a . Chan (Some f) -> ReaderC (Chan (Some f)) m a -> m a
+runServerWithChan
+    :: forall f m a . TChan (Some f) -> ReaderC (TChan (Some f)) m a -> m a
 runServerWithChan = runReader
 
 resp :: (MonadIO m) => MVar a -> a -> m ()

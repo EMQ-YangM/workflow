@@ -12,6 +12,7 @@ module Example.E1 where
 import           Control.Algebra
 import           Control.Carrier.Reader
 import           Control.Concurrent
+import           Control.Concurrent.STM         ( newTChanIO )
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Default.Class
@@ -44,9 +45,7 @@ mkSigAndClass "SigLog"
     , ''Allmetric
     ]
 
-client
-    :: (HasServer "log" SigLog '[Log , Allmetric] sig m, MonadIO m)
-    => m ()
+client :: (HasServer "log" SigLog '[Log , Allmetric] sig m, MonadIO m) => m ()
 client = do
     cast @"log" $ Log L1 "val"
     cast @"log" $ Log L2 "val"
@@ -58,7 +57,7 @@ client = do
 mkMetric "LogMetric" ["log_all"]
 
 logServer
-    :: (Has (Reader (Chan (Some SigLog)) :+: Metric LogMetric) sig m, MonadIO m)
+    :: (Has (ToServerMessage SigLog :+: Metric LogMetric) sig m, MonadIO m)
     => m ()
 logServer = serverHelper @SigLog $ \case
     SigLog1 l               -> inc log_all >> liftIO (print l)
@@ -66,7 +65,7 @@ logServer = serverHelper @SigLog $ \case
 
 run :: IO ()
 run = void $ do
-    logChan <- newChan
+    logChan <- newTChanIO
 
     forkIO $ void $ runReader logChan $ runMetric @LogMetric logServer
 
