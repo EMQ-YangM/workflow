@@ -161,27 +161,3 @@ runWithWorkGroup
     -> m a
 runWithWorkGroup chan f =
     runReader (unsafeCoerce $ IntMap.fromList chan) $ unRequestC $ runLabelled f
-
-type ToWrokMessage f = Reader (TChan (Some f))
-
-workHelper
-    :: forall f es sig m
-     . (Has (Reader (TChan (Some f))) sig m, MonadIO m)
-    => (forall s . f s -> m ())
-    -> m ()
-    -> m ()
-workHelper f w = do
-    tc  <- ask @(TChan (Some f))
-    isE <- liftIO $ atomically (isEmptyTChan tc)
-    if isE then w else go tc
-  where
-    go tc = do
-        Some v <- liftIO $ atomically $ readTChan tc
-        f v
-        isE <- liftIO $ atomically (isEmptyTChan tc)
-        if isE then pure () else go tc
-
-runWorkerWithChan
-    :: forall f m a . TChan (Some f) -> ReaderC (TChan (Some f)) m a -> m a
-runWorkerWithChan = runReader
-

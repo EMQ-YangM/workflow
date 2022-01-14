@@ -138,20 +138,3 @@ runWithServer
     -> m a
 runWithServer chan f =
     runReader (unsafeCoerce chan) $ unRequestC $ runLabelled f
-
--- server 
-type ToServerMessage f = Reader (TChan (Some f))
-
-serverHelper
-    :: forall f es sig m
-     . (Has (ToServerMessage f) sig m, MonadIO m)
-    => (forall s . f s -> m ())
-    -> m ()
-serverHelper f = do
-    tc     <- ask @(TChan (Some f))
-    Some v <- liftIO $ atomically $ readTChan tc
-    f v
-
-runServerWithChan
-    :: forall f m a . TChan (Some f) -> ReaderC (TChan (Some f)) m a -> m a
-runServerWithChan = runReader
