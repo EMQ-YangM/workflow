@@ -1,7 +1,11 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE LambdaCase #-}
 module Util where
+import           Control.Algebra
 import           Control.Carrier.Reader         ( Has
                                                 , Reader
                                                 , ReaderC
@@ -46,7 +50,7 @@ runServerWithChan
 runServerWithChan = runReader
 
 -- work
-type ToWrokMessage f = Reader (TChan (Some f))
+type ToWorkMessage f = Reader (TChan (Some f))
 
 workHelper
     :: forall f es sig m
@@ -68,3 +72,16 @@ workHelper f w = do
 runWorkerWithChan
     :: forall f m a . TChan (Some f) -> ReaderC (TChan (Some f)) m a -> m a
 runWorkerWithChan = runReader
+
+workServerHelper
+    :: forall f g sig m
+     . (Has (ToServerMessage f :+: ToWorkMessage g) sig m, MonadIO m)
+    => (forall s . f s -> m ())
+    -> (forall s . g s -> m ())
+    -> m ()
+workServerHelper funf fung = do
+    f <- ask @(TChan (Some f))
+    g <- ask @(TChan (Some g))
+    liftIO (atomically (waitEither f g)) >>= \case
+        Left  (Some so) -> funf so
+        Right (Some so) -> fung so

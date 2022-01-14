@@ -66,7 +66,7 @@ mkMetric "WorkMetric" ["w_total"]
 work
     :: ( HasServer "log" SigLog1 '[Log] sig m
        , Has
-             ( ToWrokMessage SigCom :+: Reader WorkEnv :+: Error Stop :+: Metric WorkMetric
+             ( ToWorkMessage SigCom :+: Reader WorkEnv :+: Error Stop :+: Metric WorkMetric
              )
              sig
              m
