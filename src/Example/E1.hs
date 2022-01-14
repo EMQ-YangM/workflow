@@ -22,6 +22,7 @@ import           HasServer
 import           Metric
 import           TH
 import           Type
+import           Util
 
 client :: (HasServer "log" SigLog1 '[Log , Allmetric] sig m, MonadIO m) => m ()
 client = do

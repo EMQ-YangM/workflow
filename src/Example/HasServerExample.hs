@@ -31,6 +31,7 @@ import           System.Random
 import           TH
 import           Text.Read
 import           Type
+import           Util
 
 client
     :: ( HasServer "Some" SigMessage '[Message1 , GetAllMetric] sig m

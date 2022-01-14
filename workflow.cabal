@@ -25,6 +25,7 @@ library
                     , HasWorkGroup
                     , TH
                     , Type
+                    , Util
                     , Example.HasServerExample
                     , Example.E1
                     , Example.E2

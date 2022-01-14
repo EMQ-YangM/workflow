@@ -185,5 +185,3 @@ runWorkerWithChan
     :: forall f m a . TChan (Some f) -> ReaderC (TChan (Some f)) m a -> m a
 runWorkerWithChan = runReader
 
-resp :: (MonadIO m) => MVar a -> a -> m ()
-resp tmv a = liftIO $ putMVar tmv a

@@ -25,6 +25,7 @@ import           Metric
 import           System.Random
 import           TH
 import           Type
+import           Util
 
 newtype WorkInfo = WorkInfo (MVar (String, Int))
 newtype AllCycle = AllCycle (MVar (Int, Int))
@@ -118,3 +119,11 @@ runAll = void $ do
 
     forever $ do
         liftIO $ threadDelay 1000000
+
+fun :: IO ()
+fun = do
+    l <- newTChanIO @Int
+    r <- newTChanIO @Bool
+    atomically $ writeTChan r True
+    v <- atomically $ waitEither l r
+    print v
