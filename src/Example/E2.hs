@@ -37,7 +37,7 @@ manager
 manager = do
     res <- callById @"work" 1 WorkInfo
     cast @"log" (Log L1 (show res))
- 
+
     replicateM_ 20 $ cast @"log" (Log L1 "v")
 
     v <- call @"log" Allmetric
@@ -68,9 +68,7 @@ work
     => m ()
 work = forever $ workServerHelper @SigCom @SigLog1
     (\case
-        SigCom1 Stop -> do
-            WorkEnv a b <- ask
-            throwError Stop
+        SigCom1 Stop           -> throwError Stop
         SigCom2 (WorkInfo tmv) -> do
             WorkEnv a b <- ask
             resp tmv (a, b)
@@ -80,7 +78,7 @@ work = forever $ workServerHelper @SigCom @SigLog1
             resp tmv (b, v)
     )
     (\case
-        SigLog11 l               -> inc w_total >> inc log_all >> liftIO (print l)
+        SigLog11 l -> inc w_total >> inc log_all >> liftIO (print l)
         SigLog12 (Allmetric tmv) -> getAll @LogMetric1 Proxy >>= resp tmv
     )
 
@@ -103,5 +101,5 @@ runAll = void $ do
         (zip [1 ..] tcs)
         manager
 
-    forever $ do 
+    forever $ do
         liftIO $ threadDelay 1000000
