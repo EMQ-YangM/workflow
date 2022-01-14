@@ -17,6 +17,7 @@ import           Control.Concurrent.STM
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Foldable                  ( for_ )
+import           Data.Proxy
 import           Example.E1
 import           Example.Type
 import           HasServer
@@ -34,17 +35,19 @@ manager
        )
     => m ()
 manager = do
-    res <- mcall @"work" [1 .. 10] WorkInfo
+    res <- callById @"work" 1 WorkInfo
     cast @"log" (Log L1 (show res))
-
-    res <- mcall @"work" [1 .. 10] AllCycle
-    cast @"log" (Log L1 (show res))
-
-    liftIO $ threadDelay 1000000
-    mcast @"work" [1 .. 10] Stop
+ 
+    replicateM_ 20 $ cast @"log" (Log L1 "v")
 
     v <- call @"log" Allmetric
-    cast @"log" (Log L1 $ show v)
+    cast @"log" (Log L4 $ show v)
+
+    res <- callById @"work" 1 AllCycle
+    cast @"log" (Log L3 (show res))
+
+    liftIO $ threadDelay 1000000
+    castById @"work" 1 Stop
 
 data WorkEnv = WorkEnv
     { name :: String
@@ -53,20 +56,20 @@ data WorkEnv = WorkEnv
     deriving Show
 
 work
-    :: ( HasServer "log" SigLog1 '[Log] sig m
-       , Has
-             ( ToWorkMessage SigCom :+: Reader WorkEnv :+: Error Stop :+: Metric WorkMetric
+    :: ( Has
+             ( ToWorkMessage SigCom :+: ToServerMessage SigLog1 :+:
+               Reader WorkEnv :+: Error Stop :+: Metric WorkMetric :+:
+               Metric LogMetric1
              )
              sig
              m
        , MonadIO m
        )
     => m ()
-work = forever $ workHelper @SigCom
+work = forever $ workServerHelper @SigCom @SigLog1
     (\case
         SigCom1 Stop -> do
             WorkEnv a b <- ask
-            cast @"log" (Log L4 (a ++ " work stop"))
             throwError Stop
         SigCom2 (WorkInfo tmv) -> do
             WorkEnv a b <- ask
@@ -76,43 +79,29 @@ work = forever $ workHelper @SigCom
             WorkEnv a b <- ask
             resp tmv (b, v)
     )
-    (do
-        WorkEnv a b <- ask
-        inc w_total
-        cast @"log" (Log L1 $ "work is running, it's id " ++ a)
-        liftIO $ do
-            i <- randomRIO (100, 10000)
-            threadDelay i
+    (\case
+        SigLog11 l               -> inc w_total >> inc log_all >> liftIO (print l)
+        SigLog12 (Allmetric tmv) -> getAll @LogMetric1 Proxy >>= resp tmv
     )
 
 runAll :: IO ()
 runAll = void $ do
-    tcs     <- replicateM 10 newTChanIO
+    tcs     <- replicateM 1 newTChanIO
     logChan <- newTChanIO
-
-    forkIO $ void $ runWithServer @"log" logChan $ runWithWorkGroup @"work"
-        (zip [1 ..] tcs)
-        manager
 
     for_ (zip [1 ..] tcs) $ \(idx, t) -> do
         forkIO
             $ void
-            $ runWorkerWithChan @SigCom t
             $ runReader (WorkEnv (show idx) idx)
-            $ runWithServer @"log" logChan
+            $ runWorkerWithChan @SigCom t
+            $ runServerWithChan @SigLog1 logChan
             $ runMetric @WorkMetric
+            $ runMetric @LogMetric1
             $ runError @Stop work
 
+    void $ runWithServer @"log" logChan $ runWithWorkGroup @"work"
+        (zip [1 ..] tcs)
+        manager
 
-    forkIO $ void $ runReader logChan $ runMetric @LogMetric1 logServer
-
-    forever $ do
+    forever $ do 
         liftIO $ threadDelay 1000000
-
-fun :: IO ()
-fun = do
-    l <- newTChanIO @Int
-    r <- newTChanIO @Bool
-    atomically $ writeTChan r True
-    v <- atomically $ waitEither l r
-    print v
