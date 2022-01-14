@@ -5,10 +5,10 @@
 {-# LANGUAGE LambdaCase #-}
 module Example.Type where
 
+import           Control.Concurrent
 import           Metric
 import           TH
 import           Type
-import Control.Concurrent
 
 data Message1  where
      Message1 ::String -> MVar String -> Message1
@@ -79,14 +79,14 @@ data Log = Log Level String
 newtype Allmetric = Allmetric (MVar [Int])
 
 instance Show Level where
-    show = \case
-        L1 -> "😎"
-        L2 -> "🥶"
-        L3 -> "👿"
-        L4 -> "👾"
+  show = \case
+    L1 -> "😎"
+    L2 -> "🥶"
+    L3 -> "👿"
+    L4 -> "👾"
 
 instance Show Log where
-    show (Log l s) = show l ++ " " ++ s
+  show (Log l s) = show l ++ " " ++ s
 
 mkSigAndClass "SigLog1"
     [ ''Log
@@ -94,3 +94,14 @@ mkSigAndClass "SigLog1"
     ]
 
 mkMetric "LogMetric1" ["log_all"]
+
+newtype WorkInfo = WorkInfo (MVar (String, Int))
+newtype AllCycle = AllCycle (MVar (Int, Int))
+
+mkSigAndClass "SigCom"
+    [ ''Stop
+    , ''WorkInfo
+    , ''AllCycle
+    ]
+
+mkMetric "WorkMetric" ["w_total"]

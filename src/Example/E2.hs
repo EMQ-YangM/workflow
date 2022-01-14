@@ -27,15 +27,6 @@ import           TH
 import           Type
 import           Util
 
-newtype WorkInfo = WorkInfo (MVar (String, Int))
-newtype AllCycle = AllCycle (MVar (Int, Int))
-
-mkSigAndClass "SigCom"
-    [ ''Stop
-    , ''WorkInfo
-    , ''AllCycle
-    ]
-
 manager
     :: ( HasWorkGroup "work" SigCom '[Stop , WorkInfo , AllCycle] sig m
        , HasServer "log" SigLog1 '[Log , Allmetric] sig m
@@ -60,8 +51,6 @@ data WorkEnv = WorkEnv
     , nid  :: Int
     }
     deriving Show
-
-mkMetric "WorkMetric" ["w_total"]
 
 work
     :: ( HasServer "log" SigLog1 '[Log] sig m
