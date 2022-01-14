@@ -75,7 +75,7 @@ runWorkerWithChan = runReader
 
 workServerHelper
     :: forall f g sig m
-     . (Has (ToServerMessage f :+: ToWorkMessage g) sig m, MonadIO m)
+     . (Has (ToServerMessage g :+: ToWorkMessage f) sig m, MonadIO m)
     => (forall s . f s -> m ())
     -> (forall s . g s -> m ())
     -> m ()
