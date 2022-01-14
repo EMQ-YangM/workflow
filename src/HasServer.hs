@@ -60,22 +60,22 @@ import           Unsafe.Coerce                  ( unsafeCoerce )
 
 type HasServer (serverName :: Symbol) s ts sig m
     = ( Elems serverName ts (ToList s)
-      , HasLabelled serverName (SeverReq s ts) sig m
+      , HasLabelled serverName (Request s ts) sig m
       )
 
-type SeverReq :: (Type -> Type)
+type Request :: (Type -> Type)
             -> [Type]
             -> (Type -> Type)
             -> Type
             -> Type
-data SeverReq s ts m a where
-    SendReq ::(ToSig t s) =>t -> SeverReq s ts m ()
+data Request s ts m a where
+    SendReq ::(ToSig t s) =>t -> Request s ts m ()
 
 sendReq
     :: forall serverName s ts sig m t
      . ( Elem serverName t ts
        , ToSig t s
-       , HasLabelled (serverName :: Symbol) (SeverReq s ts) sig m
+       , HasLabelled (serverName :: Symbol) (Request s ts) sig m
        )
     => t
     -> m ()
@@ -86,7 +86,7 @@ call
      . ( Elem serverName e ts
        , ToSig e s
        , MonadIO m
-       , HasLabelled (serverName :: Symbol) (SeverReq s ts) sig m
+       , HasLabelled (serverName :: Symbol) (Request s ts) sig m
        )
     => (MVar b -> e)
     -> m b
@@ -101,7 +101,7 @@ cast
      . ( Elem serverName e ts
        , ToSig e s
        , MonadIO m
-       , HasLabelled (serverName :: Symbol) (SeverReq s ts) sig m
+       , HasLabelled (serverName :: Symbol) (Request s ts) sig m
        )
     => e
     -> m ()
@@ -109,23 +109,23 @@ cast f = do
     -- liftIO $ putStrLn "send cast"
     sendReq @serverName f
 
-newtype SeverReqC s ts m a = SeverReqC { unHasServerC :: ReaderC (Chan (Sum s ts)) m a }
+newtype RequestC s ts m a = RequestC { unRequestC :: ReaderC (Chan (Sum s ts)) m a }
   deriving (Functor, Applicative, Monad, MonadIO)
 
-instance (Algebra sig m, MonadIO m) => Algebra (SeverReq s ts :+: sig) (SeverReqC s ts m) where
-    alg hdl sig ctx = SeverReqC $ ReaderC $ \c -> case sig of
+instance (Algebra sig m, MonadIO m) => Algebra (Request s ts :+: sig) (RequestC s ts m) where
+    alg hdl sig ctx = RequestC $ ReaderC $ \c -> case sig of
         L (SendReq t) -> do
             liftIO $ writeChan c (inject t)
             pure ctx
-        R signa -> alg (runReader c . unHasServerC . hdl) signa ctx
+        R signa -> alg (runReader c . unRequestC . hdl) signa ctx
 -- client
 runWithServer
     :: forall serverName s ts m a
      . Chan (Some s)
-    -> Labelled (serverName :: Symbol) (SeverReqC s ts) m a
+    -> Labelled (serverName :: Symbol) (RequestC s ts) m a
     -> m a
 runWithServer chan f =
-    runReader (unsafeCoerce chan) $ unHasServerC $ runLabelled f
+    runReader (unsafeCoerce chan) $ unRequestC $ runLabelled f
 
 -- server 
 type ToServerMessage f = Reader (Chan (Some f))
