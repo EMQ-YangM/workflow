@@ -20,6 +20,7 @@ import           Data.Foldable                  ( for_ )
 import           Metric
 import           T
 import           TH
+import           Type
 
 newtype Stop = Stop (MVar Int)
 newtype WorkInfo = WorkInfo (MVar (String, Int))
@@ -76,6 +77,6 @@ runAll = void $ do
             $ runReader t
             $ runReader (WorkEnv (show idx) idx)
             $ runError @String work
-    forkIO $ void $ runHasServerWith @"work" (zip [1 ..] tcs) manager
+    forkIO $ void $ runWithServer @"work" (zip [1 ..] tcs) manager
     forever $ do
         liftIO $ threadDelay 1000000

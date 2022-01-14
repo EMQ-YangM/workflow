@@ -23,6 +23,7 @@ library
                     , Metric
                     , HasServer
                     , TH
+                    , Type
                     , Example.HasServerExample
                     , Example.E1
                     , Example.E2

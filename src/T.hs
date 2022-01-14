@@ -28,45 +28,8 @@ import qualified Data.IntMap                   as IntMap
 import           Data.Kind
 import           Data.Traversable               ( for )
 import           GHC.TypeLits
-import           Unsafe.Coerce
-
-type Sum :: (Type -> Type) -> [Type] -> Type
-data Sum f r where
-    Sum ::f t -> Sum f r
-
-type Some :: (Type -> Type) -> Type
-data Some f where
-    Some ::f a -> Some f
-
-class ToSig a b where
-    toSig :: a -> b a
-
-inject :: ToSig e f => e -> Sum f r
-inject = Sum . toSig
-
-type family ToList (a :: (Type -> Type)) :: [Type]
-type family Elem (name :: Symbol) (t :: Type) (ts :: [Type]) :: Constraint where
-    Elem name t '[] = TypeError ('Text "server ":<>:
-                                 'ShowType name ':<>:
-                                 'Text " not add " :<>:
-                                 'ShowType t :<>:
-                                 'Text " to it method list"
-                                 )
-    Elem name t (t ': xs) = ()
-    Elem name t (t1 ': xs) = Elem name t xs
-
-type family ElemO (name :: Symbol) (t :: Type) (ts :: [Type]) :: Constraint where
-    ElemO name t '[] = TypeError ('Text "server ":<>:
-                                 'ShowType name ':<>:
-                                 'Text " not support method " :<>:
-                                 'ShowType t
-                                 )
-    ElemO name t (t ': xs) = ()
-    ElemO name t (t1 ': xs) = ElemO name t xs
-
-type family Elems (name :: Symbol) (ls :: [Type]) (ts :: [Type]) :: Constraint where
-    Elems name (l ': ls) ts = (ElemO name l ts, Elems name ls ts)
-    Elems name '[] ts = ()
+import           Type
+import           Unsafe.Coerce                  ( unsafeCoerce )
 
 type HasLabelledServer (serverName :: Symbol) s ts sig m
     = ( Elems serverName ts (ToList s)
@@ -163,12 +126,12 @@ instance (Algebra sig m, MonadIO m) => Algebra (HasServer s ts :+: sig) (HasServ
                     pure ctx
         R signa -> alg (runReader c . unHasServerC . hdl) signa ctx
 
-runHasServerWith
+runWithServer
     :: forall serverName s ts m a
      . [(Int, TChan (Some s))]
     -> Labelled (serverName :: Symbol) (HasServerC s ts) m a
     -> m a
-runHasServerWith chan f =
+runWithServer chan f =
     runReader (unsafeCoerce $ IntMap.fromList chan) $ unHasServerC $ runLabelled
         f
 serverHelper

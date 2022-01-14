@@ -20,6 +20,7 @@ import           Data.Proxy
 import           HasServer
 import           Metric
 import           TH
+import           Type
 
 type Name = String
 
@@ -44,7 +45,7 @@ mkSigAndClass "SigLog"
     ]
 
 client
-    :: (HasLabelledServer "log" SigLog '[Log , Allmetric] sig m, MonadIO m)
+    :: (HasServer "log" SigLog '[Log , Allmetric] sig m, MonadIO m)
     => m ()
 client = do
     cast @"log" $ Log L1 "val"
@@ -69,6 +70,6 @@ run = void $ do
 
     forkIO $ void $ runReader logChan $ runMetric @LogMetric logServer
 
-    runHasServerWith @"log" logChan client
+    runWithServer @"log" logChan client
     forever $ do
         threadDelay 1000000
