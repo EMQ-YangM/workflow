@@ -17,6 +17,8 @@ import           Control.Concurrent
 import           Control.Effect.Labelled
 import           Control.Monad
 import           Control.Monad.IO.Class
+import           Data.IntMap                    ( IntMap )
+import qualified Data.IntMap                   as IntMap
 import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
 import           Data.Proxy
@@ -62,6 +64,20 @@ mkSigAndClass "SigLog"
   , ''GetAllMetric
   ]
 
+type Token = String
+
+data GetToken = GetToken Int (MVar String)
+data VerifyToken = VerifyToken String (MVar Bool)
+
+mkSigAndClass "SigAuth"
+  [ ''GetToken
+  , ''VerifyToken
+  ]
+
+-- Auth
+-- getToken
+-- verifyToken
+
 data Add1 = Add1
 data Sub1 = Sub1
 
@@ -85,6 +101,7 @@ client
              sig
              m
        , HasServer "add" SigAdd '[Add1 , Sub1 , GetAllMetric] sig m
+       , HasServer "auth" SigAuth '[GetToken, VerifyToken] sig m
        , Has (Error Stop :+: Metric ClientMetric) sig m
        , MonadIO m
        )
@@ -121,6 +138,12 @@ client = forever $ do
                 Just n  -> do
                     v <- call @"db" (GetUser n)
                     cast @"log" $ LogMessage "client" $ "result: " ++ show v
+        "getToken" : _ -> do
+            v <- call @"auth" $ GetToken 1
+            cast @"log" $ LogMessage "client" (show v)
+        "verifyToken" : _ -> do
+            v <- call @"auth" $ VerifyToken "1"
+            cast @"log" $ LogMessage "client" (show v)
         _ -> do
             val <- call @"Some" (Message1 li)
             cast @"log" $ LogMessage "client" val
@@ -249,13 +272,32 @@ addServer = serverHelper $ \case
         am <- getAll @AddMetric Proxy
         resp tmv am
 
+-- Auth server
+authServer
+    :: (Has (ToServerMessage SigAuth :+: State [String]) sig m, MonadIO m)
+    => m ()
+authServer = serverHelper @SigAuth $ \case
+    SigAuth1 (GetToken i tmv) -> do
+        modify (show i :)
+        resp tmv (show i)
+    SigAuth2 (VerifyToken s tmv) -> do
+        v <- gets @[String] (s `elem`)
+        if v then resp tmv True else resp tmv False
+
 ---- 
 runExample :: IO (Either Stop a)
 runExample = do
-    tc   <- newChan
-    dbc  <- newChan
-    tlc  <- newChan
-    addc <- newChan
+    tc    <- newChan
+    dbc   <- newChan
+    tlc   <- newChan
+    addc  <- newChan
+    authc <- newChan
+
+    --- fork auth server 
+    forkIO $ void $ runState @[String] [] $ runServerWithChan @SigAuth
+        authc
+        authServer
+
     --- fork some server , need log server
     forkIO
         $ void
@@ -286,5 +328,6 @@ runExample = do
         $ runWithServer @"db" dbc
         $ runWithServer @"log" tlc
         $ runWithServer @"add" addc
+        $ runWithServer @"auth" authc
         $ runMetric @ClientMetric
         $ runError @Stop client
