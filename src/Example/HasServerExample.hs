@@ -11,7 +11,6 @@
 {-# LANGUAGE TypeFamilies #-}
 module Example.HasServerExample where
 import           Control.Carrier.Error.Either
-import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Concurrent
 import           Control.Concurrent.STM         ( newTChanIO )
@@ -24,13 +23,11 @@ import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
 import           Data.Proxy
 import           Example.Type
-import           GHC.TypeLits
 import           HasServer
 import           Metric
 import           System.Random
 import           TH
 import           Text.Read
-import           Type
 import           Util
 
 client

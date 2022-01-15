@@ -8,7 +8,6 @@ module TH
 
 import           Control.Concurrent
 import           Data.Maybe
-import           HasServer
 import           Language.Haskell.TH
 
 mkSigAndClass :: String -> [Name] -> Q [Dec]

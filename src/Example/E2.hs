@@ -1,6 +1,5 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TemplateHaskell  #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -18,14 +17,10 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Foldable                  ( for_ )
 import           Data.Proxy
-import           Example.E1
 import           Example.Type
 import           HasServer
 import           HasWorkGroup            hiding ( resp )
 import           Metric
-import           System.Random
-import           TH
-import           Type
 import           Util
 
 manager

@@ -14,14 +14,10 @@ import           Control.Concurrent
 import           Control.Concurrent.STM         ( newTChanIO )
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Default.Class
-import           Data.Foldable
 import           Data.Proxy
 import           Example.Type
 import           HasServer
 import           Metric
-import           TH
-import           Type
 import           Util
 
 client :: (HasServer "log" SigLog1 '[Log , Allmetric] sig m, MonadIO m) => m ()
@@ -32,8 +28,6 @@ client = do
     cast @"log" $ Log L4 "val"
     v <- call @"log" Allmetric
     cast @"log" $ Log L1 (show v)
-
-
 
 logServer
     :: (Has (ToServerMessage SigLog1 :+: Metric LogMetric1) sig m, MonadIO m)

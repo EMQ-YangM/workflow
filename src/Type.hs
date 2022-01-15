@@ -1,6 +1,5 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
