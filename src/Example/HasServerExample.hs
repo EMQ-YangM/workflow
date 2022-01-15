@@ -124,14 +124,13 @@ client = forever $ do
 dbServer
     :: ( HasServer "log" SigLog '[LogMessage] sig m
        , Has
-             ( ToServerMessage SigDB :+: State (Map Int String) :+: Metric DBmetric
-             )
+             (MessageChan SigDB :+: State (Map Int String) :+: Metric DBmetric)
              sig
              m
        , MonadIO m
        )
     => m ()
-dbServer = forever $ serverHelper $ \case
+dbServer = forever $ withMessageChan $ \case
     SigDB1 (WriteUser k v) -> do
         inc db_write
         modify (Map.insert k v)
@@ -159,9 +158,8 @@ dbServer = forever $ serverHelper $ \case
 --- log server 
 
 logServer
-    :: (Has (ToServerMessage SigLog :+: Metric LogMetric) sig m, MonadIO m)
-    => m ()
-logServer = forever $ serverHelper $ \case
+    :: (Has (MessageChan SigLog :+: Metric LogMetric) sig m, MonadIO m) => m ()
+logServer = forever $ withMessageChan $ \case
     SigLog1 (LogMessage from s) -> do
         v <- getVal log_total
         inc log_total
@@ -178,14 +176,11 @@ mkMetric "SomeMetric" ["m1", "m2", "m3", "m4", "putlog"]
 
 server
     :: ( HasServer "log" SigLog '[LogMessage] sig m
-       , Has
-             (Metric SomeMetric :+: ToServerMessage SigMessage :+: Error Stop)
-             sig
-             m
+       , Has (Metric SomeMetric :+: MessageChan SigMessage :+: Error Stop) sig m
        , MonadIO m
        )
     => m ()
-server = forever $ serverHelper $ \case
+server = forever $ withMessageChan $ \case
     SigMessage1 (Message1 a b) -> do
         inc m1
         cast @"log" (LogMessage "server" a)
@@ -196,11 +191,11 @@ server = forever $ serverHelper $ \case
 
 addServer
     :: ( HasServer "log" SigLog '[LogMessage] sig m
-       , Has (ToServerMessage SigAdd :+: Metric AddMetric) sig m
+       , Has (MessageChan SigAdd :+: Metric AddMetric) sig m
        , MonadIO m
        )
     => m ()
-addServer = forever $ serverHelper $ \case
+addServer = forever $ withMessageChan $ \case
     SigAdd1 Add1 -> do
         inc add_total
         cast @"log" $ LogMessage "addServer" "add 1"
@@ -213,9 +208,8 @@ addServer = forever $ serverHelper $ \case
 
 -- Auth server
 authServer
-    :: (Has (ToServerMessage SigAuth :+: State [String]) sig m, MonadIO m)
-    => m ()
-authServer = forever $ serverHelper @SigAuth $ \case
+    :: (Has (MessageChan SigAuth :+: State [String]) sig m, MonadIO m) => m ()
+authServer = forever $ withMessageChan @SigAuth $ \case
     SigAuth1 (GetToken i tmv) -> do
         modify (show i :)
         resp tmv (show i)

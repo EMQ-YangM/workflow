@@ -33,7 +33,7 @@ manager = do
     res <- callById @"work" 1 WorkInfo
     cast @"log" (Log L1 (show res))
 
-    replicateM_ 20 $ cast @"log" (Log L1 "v")
+    replicateM_ 10 $ cast @"log" (Log L1 "v")
 
     v <- call @"log" Allmetric
     cast @"log" (Log L4 $ show v)
@@ -52,16 +52,19 @@ data WorkEnv = WorkEnv
 
 work
     :: ( Has
-             ( ToWorkMessage SigCom :+: ToServerMessage SigLog1 :+:
-               Reader WorkEnv :+: Error Stop :+: Metric WorkMetric :+:
-               Metric LogMetric1
+             (    Reader WorkEnv
+              :+: MessageChan SigLog1
+              :+: MessageChan SigCom
+              :+: Error Stop
+              :+: Metric WorkMetric
+              :+: Metric LogMetric1
              )
              sig
              m
        , MonadIO m
        )
     => m ()
-work = forever $ workServerHelper @SigCom @SigLog1
+work = forever $ withTwoMessageChan @SigCom @SigLog1
     (\case
         SigCom1 Stop           -> throwError Stop
         SigCom2 (WorkInfo tmv) -> do

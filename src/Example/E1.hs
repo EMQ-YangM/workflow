@@ -30,9 +30,9 @@ client = do
     cast @"log" $ Log L1 (show v)
 
 logServer
-    :: (Has (ToServerMessage SigLog1 :+: Metric LogMetric1) sig m, MonadIO m)
+    :: (Has (MessageChan SigLog1 :+: Metric LogMetric1) sig m, MonadIO m)
     => m ()
-logServer = forever $ serverHelper @SigLog1 $ \case
+logServer = forever $ withMessageChan @SigLog1 $ \case
     SigLog11 l               -> inc log_all >> liftIO (print l)
     SigLog12 (Allmetric tmv) -> getAll @LogMetric1 Proxy >>= resp tmv
 
