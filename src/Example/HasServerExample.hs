@@ -137,7 +137,7 @@ handCommand
 handCommand = \case
     SigCommand1 (Finish tmv) -> do
         name <- ask @Name
-        liftIO $ print $ name ++ " server stop"
+        liftIO $ putStrLn $ name ++ " server stop"
         resp tmv ()
         throwError Stop
     SigCommand2 (Talk s) -> do
