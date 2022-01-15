@@ -130,7 +130,7 @@ dbServer
        , MonadIO m
        )
     => m ()
-dbServer = forever $ withMessageChan $ \case
+dbServer = forever $ withMessageChan @SigDB $ \case
     SigDB1 (WriteUser k v) -> do
         inc db_write
         modify (Map.insert k v)
@@ -159,7 +159,7 @@ dbServer = forever $ withMessageChan $ \case
 
 logServer
     :: (Has (MessageChan SigLog :+: Metric LogMetric) sig m, MonadIO m) => m ()
-logServer = forever $ withMessageChan $ \case
+logServer = forever $ withMessageChan @SigLog $ \case
     SigLog1 (LogMessage from s) -> do
         v <- getVal log_total
         inc log_total
@@ -180,7 +180,7 @@ server
        , MonadIO m
        )
     => m ()
-server = forever $ withMessageChan $ \case
+server = forever $ withMessageChan @SigMessage $ \case
     SigMessage1 (Message1 a b) -> do
         inc m1
         cast @"log" (LogMessage "server" a)
@@ -195,7 +195,7 @@ addServer
        , MonadIO m
        )
     => m ()
-addServer = forever $ withMessageChan $ \case
+addServer = forever $ withMessageChan @SigAdd $ \case
     SigAdd1 Add1 -> do
         inc add_total
         cast @"log" $ LogMessage "addServer" "add 1"
