@@ -105,3 +105,11 @@ mkSigAndClass "SigCom"
     ]
 
 mkMetric "WorkMetric" ["w_total"]
+
+newtype Finish = Finish (MVar ())
+newtype Talk = Talk String
+
+mkSigAndClass "SigCommand"
+    [ ''Finish
+    , ''Talk
+    ]

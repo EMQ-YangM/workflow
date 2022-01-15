@@ -11,6 +11,7 @@
 {-# LANGUAGE TypeFamilies #-}
 module Example.HasServerExample where
 import           Control.Carrier.Error.Either
+import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Concurrent
 import           Control.Concurrent.STM         ( newTChanIO )
@@ -24,6 +25,7 @@ import qualified Data.Map                      as Map
 import           Data.Proxy
 import           Example.Type
 import           HasServer
+import           HasWorkGroup
 import           Metric
 import           System.Random
 import           TH
@@ -47,6 +49,7 @@ client
              m
        , HasServer "add" SigAdd '[Add1 , Sub1 , GetAllMetric] sig m
        , HasServer "auth" SigAuth '[GetToken , VerifyToken] sig m
+       , HasWorkGroup "w" SigCommand '[Finish , Talk] sig m
        , Has (Error Stop :+: Metric ClientMetric) sig m
        , MonadIO m
        )
@@ -57,6 +60,13 @@ client = forever $ do
         ["size"] -> do
             v <- call @"db" GetDBSize
             cast @"log" $ LogMessage "client" $ "DB size: " ++ show v
+        "finish" : _ -> do
+            cast @"log" $ LogMessage "client" "finish all"
+            liftIO $ threadDelay 100000
+            callAll @"w" Finish
+            throwError Stop
+        "castAll" : s -> do
+            castAll @"w" (Talk (concat s))
         "+1" : _ -> do
             cast @"add" Add1
         "-1" : _ -> do
@@ -120,55 +130,87 @@ client = forever $ do
                 ++ show allMetric
 
 ---- DB server
+handCommand
+    :: (Has (Error Stop :+: Reader Name) sig m, MonadIO m)
+    => SigCommand f
+    -> m ()
+handCommand = \case
+    SigCommand1 (Finish tmv) -> do
+        name <- ask @Name
+        liftIO $ print $ name ++ " server stop"
+        resp tmv ()
+        throwError Stop
+    SigCommand2 (Talk s) -> do
+        name <- ask @Name
+        liftIO $ putStrLn $ name ++ " talk " ++ s
 
 dbServer
     :: ( HasServer "log" SigLog '[LogMessage] sig m
        , Has
-             (MessageChan SigDB :+: State (Map Int String) :+: Metric DBmetric)
+             (MessageChan SigDB
+             :+: MessageChan SigCommand
+             :+: State (Map Int String)
+             :+: Metric DBmetric
+             :+: Error Stop
+             :+: Reader Name
+             )
              sig
              m
        , MonadIO m
        )
     => m ()
-dbServer = forever $ withMessageChan @SigDB $ \case
-    SigDB1 (WriteUser k v) -> do
-        inc db_write
-        modify (Map.insert k v)
-        cast @"log" (LogMessage "dbServer" "write DB")
-    SigDB2 (GetAllMetric tmv) -> do
-        am <- getAll @DBmetric Proxy
-        resp tmv am
-    SigDB3 (GetUser k tmv) -> do
-        inc db_read
-        val <- gets (Map.lookup k)
-        resp tmv val
-        cast @"log" (LogMessage "dbServer" "read DB")
-    SigDB4 (GetDBSize tmv) -> do
-        v <- gets @(Map Int String) Map.size
-        resp tmv v
-    SigDB5 (GetAllUser tmv) -> do
-        v <- gets @(Map Int String) Map.keys
-        resp tmv v
-    SigDB6 (DeleteAll tmv) -> do
-        v <- gets @(Map Int String) Map.size
-        put @(Map Int String) Map.empty
-        resp tmv v
-        cast @"log" (LogMessage "dbServer" "delete all user")
+dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
+    handCommand
+    (\case
+        SigDB1 (WriteUser k v) -> do
+            inc db_write
+            modify (Map.insert k v)
+            cast @"log" (LogMessage "dbServer" "write DB")
+        SigDB2 (GetAllMetric tmv) -> do
+            am <- getAll @DBmetric Proxy
+            resp tmv am
+        SigDB3 (GetUser k tmv) -> do
+            inc db_read
+            val <- gets (Map.lookup k)
+            resp tmv val
+            cast @"log" (LogMessage "dbServer" "read DB")
+        SigDB4 (GetDBSize tmv) -> do
+            v <- gets @(Map Int String) Map.size
+            resp tmv v
+        SigDB5 (GetAllUser tmv) -> do
+            v <- gets @(Map Int String) Map.keys
+            resp tmv v
+        SigDB6 (DeleteAll tmv) -> do
+            v <- gets @(Map Int String) Map.size
+            put @(Map Int String) Map.empty
+            resp tmv v
+            cast @"log" (LogMessage "dbServer" "delete all user")
+    )
 
 --- log server 
 
 logServer
-    :: (Has (MessageChan SigLog :+: Metric LogMetric) sig m, MonadIO m) => m ()
-logServer = forever $ withMessageChan @SigLog $ \case
-    SigLog1 (LogMessage from s) -> do
-        v <- getVal log_total
-        inc log_total
-        liftIO $ do
-            putStrLn $ show v ++ ": " ++ from ++ ": " ++ s
-    SigLog2 (GetAllMetric tmv) -> do
-        inc log_t
-        am <- getAll @LogMetric Proxy
-        resp tmv am
+    :: (Has (MessageChan SigLog
+            :+: MessageChan SigCommand
+            :+: Metric LogMetric
+            :+: Error Stop
+            :+: Reader Name
+            )
+            sig
+            m
+        , MonadIO m)
+    => m ()
+logServer =
+    forever $ withTwoMessageChan @SigCommand @SigLog handCommand $ \case
+        SigLog1 (LogMessage from s) -> do
+            v <- getVal log_total
+            inc log_total
+            liftIO $ do
+                putStrLn $ show v ++ ": " ++ from ++ ": " ++ s
+        SigLog2 (GetAllMetric tmv) -> do
+            inc log_t
+            am <- getAll @LogMetric Proxy
+            resp tmv am
 
 ---- Some server
 
@@ -176,60 +218,85 @@ mkMetric "SomeMetric" ["m1", "m2", "m3", "m4", "putlog"]
 
 server
     :: ( HasServer "log" SigLog '[LogMessage] sig m
-       , Has (Metric SomeMetric :+: MessageChan SigMessage :+: Error Stop) sig m
+       , Has (Metric SomeMetric
+             :+: MessageChan SigMessage
+             :+: MessageChan SigCommand
+             :+: Error Stop
+             :+: Reader Name
+             ) sig m
        , MonadIO m
        )
     => m ()
-server = forever $ withMessageChan @SigMessage $ \case
-    SigMessage1 (Message1 a b) -> do
-        inc m1
-        cast @"log" (LogMessage "server" a)
-        resp b a
-    SigMessage2 (GetAllMetric tmv) -> do
-        am <- getAll @SomeMetric Proxy
-        resp tmv am
+server =
+    forever $ withTwoMessageChan @SigCommand @SigMessage handCommand $ \case
+        SigMessage1 (Message1 a b) -> do
+            inc m1
+            cast @"log" (LogMessage "server" a)
+            resp b a
+        SigMessage2 (GetAllMetric tmv) -> do
+            am <- getAll @SomeMetric Proxy
+            resp tmv am
 
 addServer
     :: ( HasServer "log" SigLog '[LogMessage] sig m
-       , Has (MessageChan SigAdd :+: Metric AddMetric) sig m
+       , Has (MessageChan SigAdd
+             :+: Metric AddMetric
+             :+: MessageChan SigCommand
+             :+: Error Stop
+             :+: Reader Name
+             ) sig m
        , MonadIO m
        )
     => m ()
-addServer = forever $ withMessageChan @SigAdd $ \case
-    SigAdd1 Add1 -> do
-        inc add_total
-        cast @"log" $ LogMessage "addServer" "add 1"
-    SigAdd2 Sub1 -> do
-        dec add_total
-        cast @"log" $ LogMessage "addServer" "sub 1"
-    SigAdd3 (GetAllMetric tmv) -> do
-        am <- getAll @AddMetric Proxy
-        resp tmv am
+addServer =
+    forever $ withTwoMessageChan @SigCommand @SigAdd handCommand $ \case
+        SigAdd1 Add1 -> do
+            inc add_total
+            cast @"log" $ LogMessage "addServer" "add 1"
+        SigAdd2 Sub1 -> do
+            dec add_total
+            cast @"log" $ LogMessage "addServer" "sub 1"
+        SigAdd3 (GetAllMetric tmv) -> do
+            am <- getAll @AddMetric Proxy
+            resp tmv am
 
 -- Auth server
 authServer
-    :: (Has (MessageChan SigAuth :+: State [String]) sig m, MonadIO m) => m ()
-authServer = forever $ withMessageChan @SigAuth $ \case
-    SigAuth1 (GetToken i tmv) -> do
-        modify (show i :)
-        resp tmv (show i)
-    SigAuth2 (VerifyToken s tmv) -> do
-        v <- gets @[String] (s `elem`)
-        if v then resp tmv True else resp tmv False
+    :: (Has (MessageChan SigAuth
+            :+: State [String]
+            :+: MessageChan SigCommand
+            :+: Error Stop
+            :+: Reader Name
+            ) sig m
+       , MonadIO m)
+    => m ()
+authServer =
+    forever $ withTwoMessageChan @SigCommand @SigAuth handCommand $ \case
+        SigAuth1 (GetToken i tmv) -> do
+            modify (show i :)
+            resp tmv (show i)
+        SigAuth2 (VerifyToken s tmv) -> do
+            v <- gets @[String] (s `elem`)
+            if v then resp tmv True else resp tmv False
 
 ---- 
 runExample :: IO (Either Stop a)
 runExample = do
-    tc    <- newTChanIO
-    dbc   <- newTChanIO
-    tlc   <- newTChanIO
-    addc  <- newTChanIO
-    authc <- newTChanIO
+    tc              <- newTChanIO
+    dbc             <- newTChanIO
+    tlc             <- newTChanIO
+    addc            <- newTChanIO
+    authc           <- newTChanIO
 
+    [a, b, c, d, e] <- replicateM 5 newTChanIO
     --- fork auth server 
-    forkIO $ void $ runState @[String] [] $ runServerWithChan @SigAuth
-        authc
-        authServer
+    forkIO
+        $ void
+        $ runState @[String] []
+        $ runServerWithChan @SigAuth authc
+        $ runWorkerWithChan @SigCommand a
+        $ runReader "auth"
+        $ runError @Stop authServer
 
     --- fork some server , need log server
     forkIO
@@ -237,6 +304,8 @@ runExample = do
         $ runWithServer @"log" tlc
         $ runServerWithChan @SigMessage tc
         $ runMetric @SomeMetric
+        $ runWorkerWithChan @SigCommand b
+        $ runReader "some"
         $ runError @Stop server
 
     -- - fork db server, need log server
@@ -245,15 +314,28 @@ runExample = do
         $ runWithServer @"log" tlc
         $ runServerWithChan @SigDB dbc
         $ runMetric @DBmetric
+        $ runWorkerWithChan @SigCommand c
+        $ runError @Stop
+        $ runReader "db"
         $ runState @(Map Int String) Map.empty dbServer
 
-    --- fork log server , need db server
-    forkIO $ void $ runServerWithChan tlc $ runMetric @LogMetric logServer
+    --- fork log server
+    forkIO
+        $ void
+        $ runServerWithChan tlc
+        $ runWorkerWithChan @SigCommand d
+        $ runError @Stop
+        $ runReader "log"
+        $ runMetric @LogMetric logServer
 
+    -- fork addServer server
     forkIO
         $ void
         $ runWithServer @"log" tlc
         $ runServerWithChan @SigAdd addc
+        $ runWorkerWithChan @SigCommand e
+        $ runError @Stop
+        $ runReader "add"
         $ runMetric @AddMetric addServer
 
     -- run client
@@ -263,4 +345,5 @@ runExample = do
         $ runWithServer @"add" addc
         $ runWithServer @"auth" authc
         $ runMetric @ClientMetric
+        $ runWithWorkGroup @"w" [(1, a), (2, b), (3, c), (4, d), (5, e)]
         $ runError @Stop client

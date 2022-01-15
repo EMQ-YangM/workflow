@@ -1,7 +1,7 @@
 module Main where
 
-import           Control.Monad
-import qualified Example.E2              as G
+import           Control.Monad                  ( void )
+import qualified Example.HasServerExample      as G
 
 main :: IO ()
-main = void G.runAll
+main = void G.runExample

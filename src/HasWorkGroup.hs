@@ -42,7 +42,11 @@ import           Control.Effect.Labelled        ( type (:+:)(..)
                                                 , runLabelled
                                                 , sendLabelled
                                                 )
-import           Control.Monad                  ( forever )
+import           Control.Monad                  ( forM
+                                                , forM_
+                                                , forever
+                                                , replicateM
+                                                )
 import           Control.Monad.IO.Class         ( MonadIO(..) )
 import           Data.IntMap                    ( IntMap )
 import qualified Data.IntMap                   as IntMap
@@ -71,6 +75,8 @@ type Request :: (Type -> Type)
             -> Type
 data Request s ts m a where
     SendReq ::(ToSig t s) =>Int -> t -> Request s ts m ()
+    SendAllCall ::(ToSig t s) => (MVar b -> t) -> Request s ts m [MVar b]
+    SendAllCast ::(ToSig t s) => t -> Request s ts m ()
 
 sendReq
     :: forall (serverName :: Symbol) s ts sig m t
@@ -82,6 +88,26 @@ sendReq
     -> t
     -> m ()
 sendReq i t = sendLabelled @serverName (SendReq i t)
+
+sendAllCall
+    :: forall (serverName :: Symbol) s ts sig m t b
+     . ( Elem serverName t ts
+       , ToSig t s
+       , HasLabelled serverName (Request s ts) sig m
+       )
+    => (MVar b -> t)
+    -> m [MVar b]
+sendAllCall t = sendLabelled @serverName (SendAllCall t)
+
+sendAllCast
+    :: forall (serverName :: Symbol) s ts sig m t b
+     . ( Elem serverName t ts
+       , ToSig t s
+       , HasLabelled serverName (Request s ts) sig m
+       )
+    => t
+    -> m ()
+sendAllCast t = sendLabelled @serverName (SendAllCast t)
 
 callById
     :: forall serverName s ts sig m e b
@@ -97,6 +123,19 @@ callById i f = do
     mvar <- liftIO newEmptyMVar
     sendReq @serverName i (f mvar)
     liftIO $ takeMVar mvar
+
+callAll
+    :: forall (serverName :: Symbol) s ts sig m t b
+     . ( Elem serverName t ts
+       , ToSig t s
+       , HasLabelled serverName (Request s ts) sig m
+       , MonadIO m
+       )
+    => (MVar b -> t)
+    -> m [b]
+callAll t = do
+    vs <- sendLabelled @serverName (SendAllCall t)
+    mapM (liftIO . takeMVar) vs
 
 mcall
     :: forall serverName s ts sig m e b
@@ -127,6 +166,17 @@ castById
 castById i f = do
     sendReq @serverName i f
 
+castAll
+    :: forall (serverName :: Symbol) s ts sig m t b
+     . ( Elem serverName t ts
+       , ToSig t s
+       , HasLabelled serverName (Request s ts) sig m
+       , MonadIO m
+       )
+    => t
+    -> m ()
+castAll t = sendLabelled @serverName (SendAllCast t)
+
 mcast
     :: forall serverName s ts sig m e b
      . ( Elem serverName e ts
@@ -151,6 +201,17 @@ instance (Algebra sig m, MonadIO m) => Algebra (Request s ts :+: sig) (RequestC 
                 Just ch -> do
                     liftIO $ atomically $ writeTChan ch (inject t)
                     pure ctx
+        L (SendAllCall t) -> do
+            mvs <- forM (IntMap.elems c) $ \ch -> do
+                mv <- liftIO newEmptyMVar
+                liftIO $ atomically $ writeTChan ch (inject (t mv))
+                pure mv
+            pure (mvs <$ ctx)
+        L (SendAllCast t) -> do
+            IntMap.traverseWithKey
+                (\_ ch -> liftIO $ atomically $ writeTChan ch (inject t))
+                c
+            pure ctx
         R signa -> alg (runReader c . unRequestC . hdl) signa ctx
 
 runWithWorkGroup
