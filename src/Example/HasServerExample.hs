@@ -282,19 +282,19 @@ authServer =
 ---- 
 runExample :: IO (Either Stop a)
 runExample = do
-    tc              <- newTChanIO
-    dbc             <- newTChanIO
-    tlc             <- newTChanIO
-    addc            <- newTChanIO
-    authc           <- newTChanIO
+    tc              <- newMessageChan @SigMessage
+    dbc             <- newMessageChan @SigDB
+    tlc             <- newMessageChan @SigLog
+    addc            <- newMessageChan @SigAdd
+    authc           <- newMessageChan @SigAuth
 
-    [a, b, c, d, e] <- replicateM 5 newTChanIO
+    [a, b, c, d, e] <- replicateM 5 $ newMessageChan @SigCommand
     --- fork auth server 
     forkIO
         $ void
         $ runState @[String] []
-        $ runServerWithChan @SigAuth authc
-        $ runWorkerWithChan @SigCommand a
+        $ runServerWithChan authc
+        $ runWorkerWithChan a
         $ runReader "auth"
         $ runError @Stop authServer
 
@@ -302,9 +302,9 @@ runExample = do
     forkIO
         $ void
         $ runWithServer @"log" tlc
-        $ runServerWithChan @SigMessage tc
+        $ runServerWithChan tc
         $ runMetric @SomeMetric
-        $ runWorkerWithChan @SigCommand b
+        $ runWorkerWithChan b
         $ runReader "some"
         $ runError @Stop server
 
@@ -312,9 +312,9 @@ runExample = do
     forkIO
         $ void
         $ runWithServer @"log" tlc
-        $ runServerWithChan @SigDB dbc
+        $ runServerWithChan dbc
         $ runMetric @DBmetric
-        $ runWorkerWithChan @SigCommand c
+        $ runWorkerWithChan c
         $ runError @Stop
         $ runReader "db"
         $ runState @(Map Int String) Map.empty dbServer
@@ -323,7 +323,7 @@ runExample = do
     forkIO
         $ void
         $ runServerWithChan tlc
-        $ runWorkerWithChan @SigCommand d
+        $ runWorkerWithChan d
         $ runError @Stop
         $ runReader "log"
         $ runMetric @LogMetric logServer
@@ -332,8 +332,8 @@ runExample = do
     forkIO
         $ void
         $ runWithServer @"log" tlc
-        $ runServerWithChan @SigAdd addc
-        $ runWorkerWithChan @SigCommand e
+        $ runServerWithChan addc
+        $ runWorkerWithChan e
         $ runError @Stop
         $ runReader "add"
         $ runMetric @AddMetric addServer

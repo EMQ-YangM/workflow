@@ -62,7 +62,7 @@ logServer = forever $ withMessageChan @SigLog1 $ \case
 
 run :: IO ()
 run = void $ do
-    logChan <- newTChanIO
+    logChan <- newMessageChan
 
     forkIO $ void $ runReader logChan $ runState L1 $ runMetric @LogMetric1
         logServer

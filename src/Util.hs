@@ -19,6 +19,7 @@ import           Control.Concurrent.STM         ( STM
                                                 , TChan
                                                 , atomically
                                                 , isEmptyTChan
+                                                , newTChanIO
                                                 , orElse
                                                 , readTChan
                                                 )
@@ -95,3 +96,6 @@ withThreeMessageChan f1 f2 f3 = do
         T1 (Some so) -> f1 so
         T2 (Some so) -> f2 so
         T3 (Some so) -> f3 so
+
+newMessageChan :: forall f . IO (TChan (Some f))
+newMessageChan = newTChanIO

@@ -78,12 +78,14 @@ work = forever $ withTwoMessageChan @SigCom @SigLog1
     (\case
         SigLog11 l -> inc w_total >> inc log_all >> liftIO (print l)
         SigLog12 (Allmetric tmv) -> getAll @LogMetric1 Proxy >>= resp tmv
+        SigLog13 _               -> undefined
+        SigLog14 _               -> undefined
     )
 
 runAll :: IO ()
 runAll = void $ do
-    tcs     <- replicateM 1 newTChanIO
-    logChan <- newTChanIO
+    tcs     <- replicateM 1 newMessageChan
+    logChan <- newMessageChan
 
     for_ (zip [1 ..] tcs) $ \(idx, t) -> do
         forkIO
