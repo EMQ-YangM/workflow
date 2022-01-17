@@ -22,41 +22,41 @@ import           Metric
 import           Util
 
 client
-    :: ( HasServer "log" SigLog1 '[Log , Allmetric , P , SetLevel] sig m
+    :: ( HasServer "log" SigLog '[Log , Allmetric , P , SetLevel] sig m
        , MonadIO m
        )
     => m ()
 client = do
     call @"log" $ SetLevel "1" L2
-    cast @"log" $ Log L1 "val"
-    cast @"log" $ Log L2 "val"
-    cast @"log" $ Log L3 "val"
-    cast @"log" $ Log L4 "val"
+    cast @"log" $ Log L1 "client" "val"
+    cast @"log" $ Log L2 "client" "val"
+    cast @"log" $ Log L3 "client" "val"
+    cast @"log" $ Log L4 "client" "val"
     v <- call @"log" Allmetric
-    cast @"log" $ Log L1 (show v)
+    cast @"log" $ Log L1 "client" (show v)
     cast @"log" $ P 10010
 
-client1 :: (HasServer "log" SigLog1 '[Log] sig m, MonadIO m) => m ()
+client1 :: (HasServer "log" SigLog '[Log] sig m, MonadIO m) => m ()
 client1 = do
-    cast @"log" $ Log L1 "val"
-    cast @"log" $ Log L2 "val"
-    cast @"log" $ Log L3 "val"
-    cast @"log" $ Log L4 "val"
+    cast @"log" $ Log L1 "client1" "val"
+    cast @"log" $ Log L2 "client1" "val"
+    cast @"log" $ Log L3 "client1" "val"
+    cast @"log" $ Log L4 "client1" "val"
 
 
 logServer
-    :: ( Has (MessageChan SigLog1 :+: State Level :+: Metric LogMetric1) sig m
+    :: ( Has (MessageChan SigLog :+: State Level :+: Metric LogMetric1) sig m
        , MonadIO m
        )
     => m ()
-logServer = forever $ withMessageChan @SigLog1 $ \case
-    SigLog11 l@(Log lv _) -> do
+logServer = forever $ withMessageChan @SigLog $ \case
+    SigLog1 l@(Log lv _ _) -> do
         inc log_all
         lv' <- get @Level
         if lv' <= lv then liftIO (print l) else pure ()
-    SigLog12 (Allmetric tmv  ) -> getAll @LogMetric1 Proxy >>= resp tmv
-    SigLog13 (P         v    ) -> liftIO (print v)
-    SigLog14 (SetLevel token lv tmv) -> do
+    SigLog2 (Allmetric tmv  ) -> getAll @LogMetric1 Proxy >>= resp tmv
+    SigLog3 (P         v    ) -> liftIO (print v)
+    SigLog4 (SetLevel token lv tmv) -> do
         put lv
         resp tmv ()
 

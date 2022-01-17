@@ -16,14 +16,17 @@ data Message1  where
     --                   add linear type  (call function, server must response)
 data Stop = Stop
 newtype GetAllMetric = GetAllMetric (MVar [Int])
+type Token = String
+
+newtype GetToken = GetToken (MVar String)
+data VerifyToken = VerifyToken String (MVar Bool)
 
 data WriteUser = WriteUser Int String
 data GetUser = GetUser Int (MVar (Maybe String))
 newtype GetDBSize = GetDBSize (MVar Int)
 newtype GetAllUser = GetAllUser (MVar [Int])
-newtype DeleteAll = DeleteAll (MVar Int)
-
-data LogMessage = LogMessage String String
+data DeleteAll where
+   DeleteAll :: Token -> MVar Int -> DeleteAll
 
 mkSigAndClass "SigMessage"
   [ ''Message1
@@ -39,15 +42,6 @@ mkSigAndClass "SigDB"
   , ''DeleteAll
   ]
 
-mkSigAndClass "SigLog"
-  [ ''LogMessage
-  , ''GetAllMetric
-  ]
-
-type Token = String
-
-data GetToken = GetToken Int (MVar String)
-data VerifyToken = VerifyToken String (MVar Bool)
 
 mkSigAndClass "SigAuth"
   [ ''GetToken
@@ -73,9 +67,9 @@ mkMetric "AddMetric" ["add_total"]
 
 type Name = String
 
-data Level = L1 | L2 | L3 | L4 deriving (Eq, Ord)
+data Level = L1 | L2 | L3 | L4 deriving (Eq, Ord, Read)
 
-data Log = Log Level String
+data Log = Log Level Name String
 newtype Allmetric = Allmetric (MVar [Int])
 
 instance Show Level where
@@ -86,12 +80,12 @@ instance Show Level where
     L4 -> "👾"
 
 instance Show Log where
-  show (Log l s) = show l ++ " " ++ s
+  show (Log l name s) = show l ++ " " ++ name ++ " " ++ s
 
 newtype P = P Int 
 data SetLevel = SetLevel Token Level (MVar ())
 
-mkSigAndClass "SigLog1"
+mkSigAndClass "SigLog"
     [ ''Log
     , ''Allmetric
     , ''P
@@ -118,3 +112,5 @@ mkSigAndClass "SigCommand"
     [ ''Finish
     , ''Talk
     ]
+
+mkMetric "SomeMetric" ["m1", "m2", "m3", "m4", "putlog"]

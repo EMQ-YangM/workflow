@@ -9,6 +9,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use camelCase" #-}
 module Example.HasServerExample where
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
@@ -28,13 +30,14 @@ import           HasServer
 import           HasWorkGroup
 import           Metric
 import           System.Random
-import           TH
-import           Text.Read
+import           Text.Read               hiding ( get )
 import           Util
+
 
 client
     :: ( HasServer "Some" SigMessage '[Message1 , GetAllMetric] sig m
-       , HasServer "log" SigLog '[LogMessage , GetAllMetric] sig m
+       , HasServer "log" SigLog '[Log] sig m
+       , HasServer "log1" SigLog '[SetLevel] sig m
        , HasServer
              "db"
              SigDB
@@ -50,84 +53,76 @@ client
        , HasServer "add" SigAdd '[Add1 , Sub1 , GetAllMetric] sig m
        , HasServer "auth" SigAuth '[GetToken , VerifyToken] sig m
        , HasWorkGroup "w" SigCommand '[Finish , Talk] sig m
-       , Has (Error Stop :+: Metric ClientMetric) sig m
+       , Has (Error Stop :+: Metric ClientMetric :+: Reader Name) sig m
        , MonadIO m
        )
     => m a
-client = forever $ do
-    li <- liftIO getLine
-    case words li of
-        ["size"] -> do
-            v <- call @"db" GetDBSize
-            cast @"log" $ LogMessage "client" $ "DB size: " ++ show v
-        "finish" : _ -> do
-            cast @"log" $ LogMessage "client" "finish all"
-            liftIO $ threadDelay 100000
-            callAll @"w" Finish
-            throwError Stop
-        "castAll" : s -> do
-            castAll @"w" (Talk (concat s))
-        "+1" : _ -> do
-            cast @"add" Add1
-        "-1" : _ -> do
-            cast @"add" Sub1
-        "num" : _ -> do
-            v <- call @"add" GetAllMetric
-            cast @"log" $ LogMessage "client" $ "num is " ++ show v
-        "deleteAll" : _ -> do
-            v <- call @"db" DeleteAll
-            cast @"log" $ LogMessage "client" $ "DB dlete total: " ++ show v
-        "getAllUser" : _ -> do
-            v <- call @"db" GetAllUser
-            cast @"log" $ LogMessage "client" $ "result: " ++ show v
-        "writeUser" : idx : val -> do
-            let num = readMaybe @Int idx
-            case num of
-                Nothing -> liftIO $ print "input error"
-                Just n  -> do
-                    cast @"db" $ WriteUser n (concat val)
-        "getUser" : idx -> do
-            let num = readMaybe @Int (concat idx)
-            case num of
-                Nothing -> liftIO $ print "input error"
-                Just n  -> do
-                    v <- call @"db" (GetUser n)
-                    cast @"log" $ LogMessage "client" $ "result: " ++ show v
-        "getToken" : _ -> do
-            v <- call @"auth" $ GetToken 1
-            cast @"log" $ LogMessage "client" (show v)
-        "verifyToken" : _ -> do
-            v <- call @"auth" $ VerifyToken "1"
-            cast @"log" $ LogMessage "client" (show v)
-        _ -> do
-            val <- call @"Some" (Message1 li)
-            cast @"log" $ LogMessage "client" val
+client = do
+    castAll @"w" (Talk "ready!")
+    forever $ do
+        li <- liftIO getLine
+        case words li of
+            ["size"] -> do
+                v <- call @"db" GetDBSize
+                l1 $ "DB size: " ++ show v
+            "set" : token : i -> do
+                case readMaybe @Level (concat i) of
+                    Nothing -> liftIO $ print "input error"
+                    Just le -> do
+                        call @"log1" $ SetLevel token le
+            "finish" : _ -> do
+                l4 "finish all"
+                liftIO $ threadDelay 100000
+                callAll @"w" Finish
+                throwError Stop
+            "castAll" : s -> do
+                castAll @"w" (Talk (concat s))
+            "+1" : _ -> do
+                cast @"add" Add1
+            "-1" : _ -> do
+                cast @"add" Sub1
+            "num" : _ -> do
+                v <- call @"add" GetAllMetric
+                l1 $ "num is" ++ show v
+            "deleteAll" : token : _ -> do
+                v <- call @"db" $ DeleteAll token
+                l4 $ "DB delete all: " ++ show v
+            "getAllUser" : _ -> do
+                v <- call @"db" GetAllUser
+                l1 $ "result: " ++ show v
+            "writeUser" : idx : val -> do
+                let num = readMaybe @Int idx
+                case num of
+                    Nothing -> liftIO $ print "input error"
+                    Just n  -> do
+                        cast @"db" $ WriteUser n (concat val)
+            "getUser" : idx -> do
+                let num = readMaybe @Int (concat idx)
+                case num of
+                    Nothing -> liftIO $ print "input error"
+                    Just n  -> do
+                        v <- call @"db" (GetUser n)
+                        l1 $ "result: " ++ show v
+            "getToken" : _ -> do
+                v <- call @"auth" $ GetToken
+                l4 $ "getToken: " ++ v
+            "verifyToken" : s -> do
+                v <- call @"auth" $ VerifyToken (concat s)
+                l3 $ show v
+            _ -> do
+                val <- call @"Some" (Message1 li)
+                l1 "writeDB"
+                idx <- liftIO randomIO
+                val <- liftIO $ replicateM 4 randomIO
+                cast @"db" (WriteUser idx val)
+                val <- call @"db" (GetUser idx)
+                l2 $ "readDB result is: " ++ show val
 
-            cast @"log" $ LogMessage "client" "writeDB "
+                allMetric <- call @"db" GetAllMetric
+                l1 $ "DB all metrics" ++ show allMetric
 
-            idx <- liftIO randomIO
-            val <- liftIO $ replicateM 4 randomIO
-            cast @"db" (WriteUser idx val)
-            val <- call @"db" (GetUser idx)
-            cast @"log" $ LogMessage "client" $ "readDB result is: " ++ show val
-
-            allMetric <- call @"db" GetAllMetric
-            cast @"log"
-                $  LogMessage "client"
-                $  "DB all metrics: "
-                ++ show allMetric
-
-            allMetric <- call @"Some" GetAllMetric
-            cast @"log"
-                $  LogMessage "client"
-                $  "Some all metrics: "
-                ++ show allMetric
-
-            allMetric <- call @"log" GetAllMetric
-            cast @"log"
-                $  LogMessage "client"
-                $  "log all metrics: "
-                ++ show allMetric
+                allMetric <- call @"Some" GetAllMetric
+                l1 $ "Some all metrics" ++ show allMetric
 
 ---- DB server
 handCommand
@@ -145,7 +140,8 @@ handCommand = \case
         liftIO $ putStrLn $ name ++ " talk " ++ s
 
 dbServer
-    :: ( HasServer "log" SigLog '[LogMessage] sig m
+    :: ( HasServer "log" SigLog '[Log] sig m
+       , HasServer "auth" SigAuth '[VerifyToken] sig m
        , Has
              (MessageChan SigDB
              :+: MessageChan SigCommand
@@ -165,7 +161,7 @@ dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
         SigDB1 (WriteUser k v) -> do
             inc db_write
             modify (Map.insert k v)
-            cast @"log" (LogMessage "dbServer" "write DB")
+            l1 "write DB"
         SigDB2 (GetAllMetric tmv) -> do
             am <- getAll @DBmetric Proxy
             resp tmv am
@@ -173,28 +169,36 @@ dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
             inc db_read
             val <- gets (Map.lookup k)
             resp tmv val
-            cast @"log" (LogMessage "dbServer" "read DB")
+            l1 "read DB"
         SigDB4 (GetDBSize tmv) -> do
             v <- gets @(Map Int String) Map.size
             resp tmv v
         SigDB5 (GetAllUser tmv) -> do
             v <- gets @(Map Int String) Map.keys
             resp tmv v
-        SigDB6 (DeleteAll tmv) -> do
-            v <- gets @(Map Int String) Map.size
-            put @(Map Int String) Map.empty
-            resp tmv v
-            cast @"log" (LogMessage "dbServer" "delete all user")
+        SigDB6 (DeleteAll token tmv) -> do
+            vt <- call @"auth" $ VerifyToken token
+            if vt
+                then do
+                    v <- gets @(Map Int String) Map.size
+                    put @(Map Int String) Map.empty
+                    resp tmv v
+                    l4 "delete all user"
+                else do
+                    resp tmv 0
+                    l4 "verify token faild, you can't delete db"
     )
 
 --- log server 
 
 logServer
-    :: (Has (MessageChan SigLog
+    :: ( HasServer "auth" SigAuth '[VerifyToken] sig m
+       , Has (MessageChan SigLog
             :+: MessageChan SigCommand
             :+: Metric LogMetric
             :+: Error Stop
             :+: Reader Name
+            :+: State Level
             )
             sig
             m
@@ -202,22 +206,30 @@ logServer
     => m ()
 logServer =
     forever $ withTwoMessageChan @SigCommand @SigLog handCommand $ \case
-        SigLog1 (LogMessage from s) -> do
-            v <- getVal log_total
-            inc log_total
-            liftIO $ do
-                putStrLn $ show v ++ ": " ++ from ++ ": " ++ s
-        SigLog2 (GetAllMetric tmv) -> do
+        SigLog1 l@(Log lv from s) -> do
+            lv' <- get @Level
+            if lv' <= lv
+                then do
+                    v <- getVal log_total
+                    inc log_total
+                    liftIO $ putStrLn $ show v ++ ": " ++ show l
+                else pure ()
+        SigLog2 (Allmetric tmv) -> do
             inc log_t
             am <- getAll @LogMetric Proxy
             resp tmv am
+        SigLog3 _                       -> undefined
+        SigLog4 (SetLevel token lv tmv) -> do
+            t <- call @"auth" $ VerifyToken token
+            if t
+                then put lv >> liftIO (print "set level success")
+                else liftIO (print "verifyToken faild, set level faild")
+            resp tmv ()
 
 ---- Some server
 
-mkMetric "SomeMetric" ["m1", "m2", "m3", "m4", "putlog"]
-
 server
-    :: ( HasServer "log" SigLog '[LogMessage] sig m
+    :: ( HasServer "log" SigLog '[Log] sig m
        , Has (Metric SomeMetric
              :+: MessageChan SigMessage
              :+: MessageChan SigCommand
@@ -231,14 +243,14 @@ server =
     forever $ withTwoMessageChan @SigCommand @SigMessage handCommand $ \case
         SigMessage1 (Message1 a b) -> do
             inc m1
-            cast @"log" (LogMessage "server" a)
+            l2 a
             resp b a
         SigMessage2 (GetAllMetric tmv) -> do
             am <- getAll @SomeMetric Proxy
             resp tmv am
 
 addServer
-    :: ( HasServer "log" SigLog '[LogMessage] sig m
+    :: ( HasServer "log" SigLog '[Log] sig m
        , Has (MessageChan SigAdd
              :+: Metric AddMetric
              :+: MessageChan SigCommand
@@ -252,17 +264,18 @@ addServer =
     forever $ withTwoMessageChan @SigCommand @SigAdd handCommand $ \case
         SigAdd1 Add1 -> do
             inc add_total
-            cast @"log" $ LogMessage "addServer" "add 1"
+            l1 "add1"
         SigAdd2 Sub1 -> do
             dec add_total
-            cast @"log" $ LogMessage "addServer" "sub 1"
+            l1 "sub1"
         SigAdd3 (GetAllMetric tmv) -> do
             am <- getAll @AddMetric Proxy
             resp tmv am
 
 -- Auth server
 authServer
-    :: (Has (MessageChan SigAuth
+    :: ( HasServer "log" SigLog '[Log] sig m
+       , Has (MessageChan SigAuth
             :+: State [String]
             :+: MessageChan SigCommand
             :+: Error Stop
@@ -272,12 +285,15 @@ authServer
     => m ()
 authServer =
     forever $ withTwoMessageChan @SigCommand @SigAuth handCommand $ \case
-        SigAuth1 (GetToken i tmv) -> do
-            modify (show i :)
-            resp tmv (show i)
+        SigAuth1 (GetToken tmv) -> do
+            rs <- replicateM 4 $ randomRIO ('a', 'z')
+            modify (rs :)
+            l4 $ "create token: " ++ rs
+            resp tmv rs
         SigAuth2 (VerifyToken s tmv) -> do
             v <- gets @[String] (s `elem`)
-            if v then resp tmv True else resp tmv False
+            l4 $ "verify token [" ++ s ++ "] " ++ show v 
+            resp tmv v
 
 ---- 
 runExample :: IO ()
@@ -289,12 +305,14 @@ runExample = do
     authc           <- newMessageChan @SigAuth
 
     [a, b, c, d, e] <- replicateM 5 $ newMessageChan @SigCommand
-    --- fork auth server 
+
+    --- fork auth server, need log server
     forkIO
         $ void
-        $ runState @[String] []
+        $ runWithServer @"log" tlc
         $ runServerWithChan authc
         $ runWorkerWithChan a
+        $ runState @[String] []
         $ runReader "auth"
         $ runError @Stop authServer
 
@@ -308,27 +326,30 @@ runExample = do
         $ runReader "some"
         $ runError @Stop server
 
-    -- - fork db server, need log server
+    -- - fork db server, need log, auth server
     forkIO
         $ void
         $ runWithServer @"log" tlc
+        $ runWithServer @"auth" authc
         $ runServerWithChan dbc
-        $ runMetric @DBmetric
         $ runWorkerWithChan c
+        $ runMetric @DBmetric
         $ runError @Stop
         $ runReader "db"
         $ runState @(Map Int String) Map.empty dbServer
 
-    --- fork log server
+    --- fork log server, need auth server
     forkIO
         $ void
+        $ runWithServer @"auth" authc
         $ runServerWithChan tlc
         $ runWorkerWithChan d
         $ runError @Stop
         $ runReader "log"
+        $ runState L1
         $ runMetric @LogMetric logServer
 
-    -- fork addServer server
+    -- fork addServer server, need log server
     forkIO
         $ void
         $ runWithServer @"log" tlc
@@ -338,17 +359,49 @@ runExample = do
         $ runReader "add"
         $ runMetric @AddMetric addServer
 
-    -- run client
+    -- run client, need Some, db, log, log1, add, auth server and w workGroup
     forkIO
         $ void
         $ runWithServer @"Some" tc
         $ runWithServer @"db" dbc
         $ runWithServer @"log" tlc
+        $ runWithServer @"log1" tlc
         $ runWithServer @"add" addc
         $ runWithServer @"auth" authc
         $ runMetric @ClientMetric
         $ runWithWorkGroup @"w" [(1, a), (2, b), (3, c), (4, d), (5, e)]
+        $ runReader "client"
         $ runError @Stop client
 
     forever $ do
         threadDelay 1000000
+
+l_fun
+    :: (HasServer "log" SigLog '[Log] sig m, Has (Reader Name) sig m, MonadIO m)
+    => Level
+    -> String
+    -> m ()
+l_fun l s = do
+    name <- ask @Name
+    cast @"log" (Log l name s)
+
+l1
+    :: (HasServer "log" SigLog '[Log] sig m, Has (Reader Name) sig m, MonadIO m)
+    => String
+    -> m ()
+l1 = l_fun L1
+l2
+    :: (HasServer "log" SigLog '[Log] sig m, Has (Reader Name) sig m, MonadIO m)
+    => String
+    -> m ()
+l2 = l_fun L2
+l3
+    :: (HasServer "log" SigLog '[Log] sig m, Has (Reader Name) sig m, MonadIO m)
+    => String
+    -> m ()
+l3 = l_fun L3
+l4
+    :: (HasServer "log" SigLog '[Log] sig m, Has (Reader Name) sig m, MonadIO m)
+    => String
+    -> m ()
+l4 = l_fun L4

@@ -25,21 +25,21 @@ import           Util
 
 manager
     :: ( HasWorkGroup "work" SigCom '[Stop , WorkInfo , AllCycle] sig m
-       , HasServer "log" SigLog1 '[Log , Allmetric] sig m
+       , HasServer "log" SigLog '[Log , Allmetric] sig m
        , MonadIO m
        )
     => m ()
 manager = do
     res <- callById @"work" 1 WorkInfo
-    cast @"log" (Log L1 (show res))
+    cast @"log" (Log L1 "manager" (show res))
 
-    replicateM_ 10 $ cast @"log" (Log L1 "v")
+    replicateM_ 10 $ cast @"log" (Log L1 "manager" "v")
 
     v <- call @"log" Allmetric
-    cast @"log" (Log L4 $ show v)
+    cast @"log" (Log L4  "manager" $ show v)
 
     res <- callById @"work" 1 AllCycle
-    cast @"log" (Log L3 (show res))
+    cast @"log" (Log L3 "manager" (show res))
 
     liftIO $ threadDelay 1000000
     castById @"work" 1 Stop
@@ -53,7 +53,7 @@ data WorkEnv = WorkEnv
 work
     :: ( Has
              (    Reader WorkEnv
-              :+: MessageChan SigLog1
+              :+: MessageChan SigLog
               :+: MessageChan SigCom
               :+: Error Stop
               :+: Metric WorkMetric
@@ -64,7 +64,7 @@ work
        , MonadIO m
        )
     => m ()
-work = forever $ withTwoMessageChan @SigCom @SigLog1
+work = forever $ withTwoMessageChan @SigCom @SigLog
     (\case
         SigCom1 Stop           -> throwError Stop
         SigCom2 (WorkInfo tmv) -> do
@@ -76,10 +76,10 @@ work = forever $ withTwoMessageChan @SigCom @SigLog1
             resp tmv (b, v)
     )
     (\case
-        SigLog11 l -> inc w_total >> inc log_all >> liftIO (print l)
-        SigLog12 (Allmetric tmv) -> getAll @LogMetric1 Proxy >>= resp tmv
-        SigLog13 _               -> undefined
-        SigLog14 _               -> undefined
+        SigLog1 l -> inc w_total >> inc log_all >> liftIO (print l)
+        SigLog2 (Allmetric tmv) -> getAll @LogMetric1 Proxy >>= resp tmv
+        SigLog3 _               -> undefined
+        SigLog4 _               -> undefined
     )
 
 runAll :: IO ()
@@ -92,7 +92,7 @@ runAll = void $ do
             $ void
             $ runReader (WorkEnv (show idx) idx)
             $ runWorkerWithChan @SigCom t
-            $ runServerWithChan @SigLog1 logChan
+            $ runServerWithChan @SigLog logChan
             $ runMetric @WorkMetric
             $ runMetric @LogMetric1
             $ runError @Stop work
