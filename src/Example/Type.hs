@@ -21,7 +21,7 @@ type Token = String
 newtype GetToken = GetToken (MVar String)
 data VerifyToken = VerifyToken String (MVar Bool)
 
-data WriteUser = WriteUser Int String
+data WriteUser = WriteUser Token Int String
 data GetUser = GetUser Int (MVar (Maybe String))
 newtype GetDBSize = GetDBSize (MVar Int)
 newtype GetAllUser = GetAllUser (MVar [Int])

@@ -90,12 +90,12 @@ client = do
             "getAllUser" : _ -> do
                 v <- call @"db" GetAllUser
                 l1 $ "result: " ++ show v
-            "writeUser" : idx : val -> do
+            "writeUser" : token : idx : val -> do
                 let num = readMaybe @Int idx
                 case num of
                     Nothing -> liftIO $ print "input error"
                     Just n  -> do
-                        cast @"db" $ WriteUser n (concat val)
+                        cast @"db" $ WriteUser token n (concat val)
             "getUser" : idx -> do
                 let num = readMaybe @Int (concat idx)
                 case num of
@@ -114,7 +114,7 @@ client = do
                 l1 "writeDB"
                 idx <- liftIO randomIO
                 val <- liftIO $ replicateM 4 randomIO
-                cast @"db" (WriteUser idx val)
+                cast @"db" (WriteUser "someToken" idx val)
                 val <- call @"db" (GetUser idx)
                 l2 $ "readDB result is: " ++ show val
 
@@ -158,10 +158,14 @@ dbServer
 dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
     handCommand
     (\case
-        SigDB1 (WriteUser k v) -> do
-            inc db_write
-            modify (Map.insert k v)
-            l1 "write DB"
+        SigDB1 (WriteUser token k v) -> do
+            vt <- call @"auth" $ VerifyToken token
+            if vt
+                then do
+                    inc db_write
+                    modify (Map.insert k v)
+                    l1 "write DB successed"
+                else l4 "write DB filed"
         SigDB2 (GetAllMetric tmv) -> do
             am <- getAll @DBmetric Proxy
             resp tmv am
@@ -292,7 +296,7 @@ authServer =
             resp tmv rs
         SigAuth2 (VerifyToken s tmv) -> do
             v <- gets @[String] (s `elem`)
-            l4 $ "verify token [" ++ s ++ "] " ++ show v 
+            l4 $ "verify token [" ++ s ++ "] " ++ show v
             resp tmv v
 
 ---- 
