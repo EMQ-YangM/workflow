@@ -280,7 +280,7 @@ authServer =
             if v then resp tmv True else resp tmv False
 
 ---- 
-runExample :: IO (Either Stop a)
+runExample :: IO ()
 runExample = do
     tc              <- newMessageChan @SigMessage
     dbc             <- newMessageChan @SigDB
@@ -339,7 +339,9 @@ runExample = do
         $ runMetric @AddMetric addServer
 
     -- run client
-    runWithServer @"Some" tc
+    forkIO
+        $ void
+        $ runWithServer @"Some" tc
         $ runWithServer @"db" dbc
         $ runWithServer @"log" tlc
         $ runWithServer @"add" addc
@@ -347,3 +349,6 @@ runExample = do
         $ runMetric @ClientMetric
         $ runWithWorkGroup @"w" [(1, a), (2, b), (3, c), (4, d), (5, e)]
         $ runError @Stop client
+
+    forever $ do
+        threadDelay 1000000
