@@ -73,7 +73,7 @@ mkMetric "AddMetric" ["add_total"]
 
 type Name = String
 
-data Level = L1 | L2 | L3 | L4
+data Level = L1 | L2 | L3 | L4 deriving (Eq, Ord)
 
 data Log = Log Level String
 newtype Allmetric = Allmetric (MVar [Int])
@@ -88,9 +88,14 @@ instance Show Level where
 instance Show Log where
   show (Log l s) = show l ++ " " ++ s
 
+newtype P = P Int 
+data SetLevel = SetLevel Token Level (MVar ())
+
 mkSigAndClass "SigLog1"
     [ ''Log
     , ''Allmetric
+    , ''P
+    , ''SetLevel
     ]
 
 mkMetric "LogMetric1" ["log_all"]
