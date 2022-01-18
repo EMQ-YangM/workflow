@@ -114,7 +114,8 @@ client = do
                 l1 "writeDB"
                 idx <- liftIO randomIO
                 val <- liftIO $ replicateM 4 randomIO
-                cast @"db" (WriteUser "someToken" idx val)
+                token <- call @"auth" GetToken
+                cast @"db" (WriteUser token idx val)
                 val <- call @"db" (GetUser idx)
                 l2 $ "readDB result is: " ++ show val
 
