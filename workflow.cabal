@@ -31,6 +31,7 @@ library
                     , Example.Example1.E1
                     , Example.Example1.E2
                     , Example.Example1.Type
+                    , Example.Chart.Type
 
     -- Modules included in this library but not exported.
     -- other-modules:
