@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeOperators #-}
-module Example.E1 where
+module Example.Example1.E1 where
 
 import           Control.Algebra
 import           Control.Carrier.Reader
@@ -16,7 +16,7 @@ import           Control.Concurrent.STM         ( newTChanIO )
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Proxy
-import           Example.Type
+import           Example.Example1.Type
 import           HasServer
 import           Metric
 import           Util

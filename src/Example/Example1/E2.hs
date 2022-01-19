@@ -6,7 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
-module Example.E2 where
+module Example.Example1.E2 where
 
 import           Control.Algebra
 import           Control.Carrier.Error.Either
@@ -17,7 +17,7 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Foldable                  ( for_ )
 import           Data.Proxy
-import           Example.Type
+import           Example.Example1.Type
 import           HasServer
 import           HasWorkGroup            hiding ( resp )
 import           Metric

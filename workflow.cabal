@@ -23,13 +23,14 @@ library
                     , Metric
                     , HasServer
                     , HasWorkGroup
+                    , HasMember
                     , TH
                     , Type
                     , Util
-                    , Example.HasServerExample
-                    , Example.E1
-                    , Example.E2
-                    , Example.Type
+                    , Example.Example1.HasServerExample
+                    , Example.Example1.E1
+                    , Example.Example1.E2
+                    , Example.Example1.Type
 
     -- Modules included in this library but not exported.
     -- other-modules:

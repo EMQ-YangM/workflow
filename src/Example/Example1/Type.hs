@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase #-}
-module Example.Type where
+module Example.Example1.Type where
 
 import           Control.Concurrent
 import           Metric

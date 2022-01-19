@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
-module Example.HasServerExample where
+module Example.Example1.HasServerExample where
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
@@ -25,7 +25,7 @@ import qualified Data.IntMap                   as IntMap
 import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
 import           Data.Proxy
-import           Example.Type
+import           Example.Example1.Type
 import           HasServer
 import           HasWorkGroup
 import           Metric
