@@ -23,7 +23,6 @@ library
                     , Metric
                     , HasServer
                     , HasWorkGroup
-                    , HasMember
                     , TH
                     , Type
                     , Util
