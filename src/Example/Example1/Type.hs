@@ -20,6 +20,8 @@ type Token = String
 
 newtype GetToken = GetToken (MVar String)
 data VerifyToken = VerifyToken String (MVar Bool)
+newtype GetAllTokens = GetAllTokens (MVar [String])
+data DeleteAllTokens = DeleteAllTokens Token (MVar Bool)
 
 data WriteUser = WriteUser Token Int String
 data GetUser = GetUser Int (MVar (Maybe String))
@@ -46,6 +48,8 @@ mkSigAndClass "SigDB"
 mkSigAndClass "SigAuth"
   [ ''GetToken
   , ''VerifyToken
+  , ''GetAllTokens
+  , ''DeleteAllTokens
   ]
 
 -- Auth

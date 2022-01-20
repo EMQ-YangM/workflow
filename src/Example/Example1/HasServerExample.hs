@@ -22,6 +22,7 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.IntMap                    ( IntMap )
 import qualified Data.IntMap                   as IntMap
+import           Data.List                      ( intersect )
 import           Data.Map                       ( Map )
 import qualified Data.Map                      as Map
 import           Data.Proxy
@@ -32,6 +33,7 @@ import           Metric
 import           System.Random
 import           Text.Read               hiding ( get )
 import           Util
+import Example.Example1.Type (VerifyToken(VerifyToken))
 
 
 client
@@ -51,7 +53,7 @@ client
              sig
              m
        , HasServer "add" SigAdd '[Add1 , Sub1 , GetAllMetric] sig m
-       , HasServer "auth" SigAuth '[GetToken , VerifyToken] sig m
+       , HasServer "auth" SigAuth '[GetToken , VerifyToken , GetAllTokens, DeleteAllTokens] sig m
        , HasWorkGroup "w" SigCommand '[Finish , Talk] sig m
        , Has (Error Stop :+: Metric ClientMetric :+: Reader Name) sig m
        , MonadIO m
@@ -109,11 +111,17 @@ client = do
             "verifyToken" : s -> do
                 v <- call @"auth" $ VerifyToken (concat s)
                 l3 $ show v
+            "getAllTokens" : _ -> do
+                v <- call @"auth" GetAllTokens
+                l4 $ show v
+            "deleteAllTokens" : token : _ -> do 
+                v <- call @"auth" (DeleteAllTokens token)
+                l4 $ "delete all tokens " ++ show v
             _ -> do
                 val <- call @"Some" (Message1 li)
                 l1 "writeDB"
-                idx <- liftIO randomIO
-                val <- liftIO $ replicateM 4 randomIO
+                idx   <- liftIO randomIO
+                val   <- liftIO $ replicateM 4 randomIO
                 token <- call @"auth" GetToken
                 cast @"db" (WriteUser token idx val)
                 val <- call @"db" (GetUser idx)
@@ -127,7 +135,10 @@ client = do
 
 ---- DB server
 handCommand
-    :: (Has (Error Stop :+: Reader Name) sig m, MonadIO m)
+    :: ( HasServer "log" SigLog '[Log] sig m
+       , Has (Error Stop :+: Reader Name) sig m
+       , MonadIO m
+       )
     => SigCommand f
     -> m ()
 handCommand = \case
@@ -138,7 +149,7 @@ handCommand = \case
         throwError Stop
     SigCommand2 (Talk s) -> do
         name <- ask @Name
-        liftIO $ putStrLn $ name ++ " talk " ++ s
+        l4 $ ", talk " ++ s
 
 dbServer
     :: ( HasServer "log" SigLog '[Log] sig m
@@ -197,7 +208,8 @@ dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
 --- log server 
 
 logServer
-    :: ( HasServer "auth" SigAuth '[VerifyToken] sig m
+    :: ( HasServer "log" SigLog '[Log] sig m
+       , HasServer "auth" SigAuth '[VerifyToken] sig m
        , Has (MessageChan SigLog
             :+: MessageChan SigCommand
             :+: Metric LogMetric
@@ -209,7 +221,7 @@ logServer
             m
         , MonadIO m)
     => m ()
-logServer =
+logServer = do
     forever $ withTwoMessageChan @SigCommand @SigLog handCommand $ \case
         SigLog1 l@(Log lv from s) -> do
             lv' <- get @Level
@@ -280,6 +292,7 @@ addServer =
 -- Auth server
 authServer
     :: ( HasServer "log" SigLog '[Log] sig m
+       , HasServer "auth" SigAuth '[VerifyToken] sig m
        , Has (MessageChan SigAuth
             :+: State [String]
             :+: MessageChan SigCommand
@@ -299,6 +312,13 @@ authServer =
             v <- gets @[String] (s `elem`)
             l4 $ "verify token [" ++ s ++ "] " ++ show v
             resp tmv v
+        SigAuth3 (GetAllTokens tmv) -> do
+            s <- get @[String]
+            resp tmv s
+        SigAuth4 (DeleteAllTokens token tmv) -> do
+            if token == "admin"
+                then put @[String] [] >> l4 ("delete all tokens by " ++ token) >> resp tmv True
+                else l4 ("delete all tokens failed by" ++ token) >> resp tmv False
 
 ---- 
 runExample :: IO ()
@@ -315,6 +335,7 @@ runExample = do
     forkIO
         $ void
         $ runWithServer @"log" tlc
+        $ runWithServer @"auth" authc
         $ runServerWithChan authc
         $ runWorkerWithChan a
         $ runState @[String] []
@@ -347,6 +368,7 @@ runExample = do
     forkIO
         $ void
         $ runWithServer @"auth" authc
+        $ runWithServer @"log" tlc
         $ runServerWithChan tlc
         $ runWorkerWithChan d
         $ runError @Stop
