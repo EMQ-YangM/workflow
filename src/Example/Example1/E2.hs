@@ -13,6 +13,7 @@ import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
 import           Control.Concurrent
 import           Control.Concurrent.STM
+import           Control.Effect.Labelled
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Foldable                  ( for_ )
@@ -40,7 +41,7 @@ work
     => m ()
 work = forever $ withTwoMessageChan @SigCom @SigLog
     (\case
-        SigCom1 Stop           -> throwError Stop
+        SigCom1 Stop           -> liftIO (print "log server stop!") >> throwError Stop
         SigCom2 (WorkInfo tmv) -> do
             WorkEnv a b <- ask
             resp tmv (a, b)
@@ -56,47 +57,34 @@ work = forever $ withTwoMessageChan @SigCom @SigLog
         SigLog4 _               -> undefined
     )
 
--- t = --             $ void
---             $ runReader (WorkEnv (show idx) idx)
---             $ runWorkerWithChan @SigCom t
---             $ runServerWithChan @SigLog logChan
---             $ runMetric @WorkMetric
---             $ runMetric @LogMetric1
---             $ runError @Stop work
-
 manager
     :: ( HasWorkGroup "work" SigCom '[Stop , WorkInfo , AllCycle] sig m
-       , HasServer "log" SigLog '[Log , Allmetric] sig m
        , MonadIO m
        )
-    => TChan (Some SigLog)
-    -> m ()
-manager tc = do
-    let fun chan =
+    => m ()
+manager = do
+    logChan <- liftIO newTChanIO
+
+    let logServer name idx chan =
             void
-                $ runReader (WorkEnv "nice" 1)
+                $ runReader (WorkEnv name idx)
                 $ runWorkerWithChan @SigCom chan
-                $ runServerWithChan @SigLog tc
+                $ runServerWithChan @SigLog logChan
                 $ runMetric @WorkMetric
                 $ runMetric @LogMetric1
                 $ runError @Stop work
 
-    forkAwork @"work" Stop fun  -- @"work" fun
-    -- forkAwork1 @"work" fun
+    createWorker @SigCom $ logServer "logServer" 1
 
-    -- res <- callById @"work" 1 WorkInfo
-    -- cast @"log" (Log L1 "manager" (show res))
+    rs <- callAll @"work" WorkInfo
 
-    -- replicateM_ 10 $ cast @"log" (Log L1 "manager" "v")
+    liftIO $ print rs
 
-    -- v <- call @"log" Allmetric
-    -- cast @"log" (Log L4 "manager" $ show v)
+    castAll @"work" Stop
 
-    -- res <- callById @"work" 1 AllCycle
-    -- cast @"log" (Log L3 "manager" (show res))
+    liftIO $ forever $ do
+        threadDelay 1000000
 
-    -- liftIO $ threadDelay 1000000
-    castById @"work" 1 Stop
 
 data WorkEnv = WorkEnv
     { name :: String
@@ -104,25 +92,5 @@ data WorkEnv = WorkEnv
     }
     deriving Show
 
-
--- runAll :: IO ()
--- runAll = void $ do
---     tcs     <- replicateM 1 newMessageChan
---     logChan <- newMessageChan
-
---     for_ (zip [1 ..] tcs) $ \(idx, t) -> do
---         forkIO
---             $ void
---             $ runReader (WorkEnv (show idx) idx)
---             $ runWorkerWithChan @SigCom t
---             $ runServerWithChan @SigLog logChan
---             $ runMetric @WorkMetric
---             $ runMetric @LogMetric1
---             $ runError @Stop work
-
---     void $ runWithServer @"log" logChan $ runWithWorkGroup @"work"
---         (zip [1 ..] tcs)
---         manager
-
---     forever $ do
---         liftIO $ threadDelay 1000000
+runAll :: IO ()
+runAll = void $ runWithWorkGroup @"work" manager

@@ -16,6 +16,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
 module HasWorkGroup where
+import           Control.Algebra
 import           Control.Carrier.Reader         ( Algebra
                                                 , Has
                                                 , Reader
@@ -62,16 +63,18 @@ import           GHC.TypeLits                   ( Symbol )
 import           Optics                         ( makeLenses )
 import           Type                           ( Elem
                                                 , Elems
+                                                , Fork(Fork)
                                                 , Some(..)
                                                 , Sum
                                                 , ToList
                                                 , ToSig
-                                                , inject, Fork (Fork)
+                                                , inject
                                                 )
 import           Unsafe.Coerce                  ( unsafeCoerce )
 
 type HasWorkGroup (serverName :: Symbol) s ts sig m
     = ( Elems serverName ts (ToList s)
+      , Has (Manager s) sig m
       , HasLabelled serverName (Request s ts) sig m
       )
 
@@ -84,8 +87,11 @@ data Request s ts m a where
     SendReq ::(ToSig t s) =>Int -> t -> Request s ts m ()
     SendAllCall ::(ToSig t s) => (MVar b -> t) -> Request s ts m [MVar b]
     SendAllCast ::(ToSig t s) => t -> Request s ts m ()
-    ForkAWorker ::(ToSig t s) => t -> (TChan (Some s) -> IO ()) -> Request s ts m ()
-    RemoveChan ::Int -> Request s ts m ()
+
+type Manager :: (Type -> Type) -> (Type -> Type) -> Type -> Type
+data Manager s m a where
+    CreateWorker ::(TChan (Some s) -> IO ()) -> Manager s m ()
+    DeleteWorker ::Int -> Manager s m ()
 
 sendReq
     :: forall (serverName :: Symbol) s ts sig m t
@@ -198,39 +204,16 @@ mcast
     -> m ()
 mcast is f = mapM_ (\x -> castById @serverName x f) is
 
-forkAwork
-    :: forall serverName s ts sig m e b
-     . ( MonadIO m
-       , Elem serverName e ts
-       , ToSig e s
-       , HasLabelled serverName (Request s ts) sig m
-       )
-    => e
-    -> (TChan (Some s) -> IO ())
-    -> m ()
-forkAwork e fun = sendLabelled @serverName (ForkAWorker e fun)
-
-forkAwork1
-    :: forall serverName s ts sig m
-     . ( MonadIO m
-       , Elem serverName Fork ts
-       , ToSig Fork s
-       , HasLabelled serverName (Request s ts) sig m
-       )
+createWorker
+    :: forall s sig m a
+     . (MonadIO m, Has (Manager s) sig m)
     => (TChan (Some s) -> IO ())
     -> m ()
-forkAwork1 fun = sendLabelled @serverName (ForkAWorker Fork fun)
+createWorker fun = send (CreateWorker fun)
 
-
-removeChan
-    :: forall serverName s ts sig m e b
-     . ( MonadIO m
-       , LabelledMember serverName (Request s ts) sig
-       , Algebra sig m
-       )
-    => Int
-    -> m ()
-removeChan idx = sendLabelled @serverName (RemoveChan idx)
+deleteChan
+    :: forall s sig m a . (MonadIO m, Has (Manager s) sig m) => Int -> m ()
+deleteChan i = send (DeleteWorker @s i)
 
 data WorkGroupState s ts = WorkGroupState
     { workMap :: IntMap (TChan (Sum s ts))
@@ -240,7 +223,7 @@ data WorkGroupState s ts = WorkGroupState
 newtype RequestC s ts m a = RequestC { unRequestC :: StateC (WorkGroupState s ts) m a }
   deriving (Functor, Applicative, Monad, MonadIO)
 
-instance (Algebra sig m, MonadIO m) => Algebra (Request s ts :+: sig) (RequestC s ts m) where
+instance (Algebra sig m, MonadIO m) => Algebra (Request s ts :+: Manager s :+: sig) (RequestC s ts m) where
     alg hdl sig ctx = RequestC $ case sig of
         L (SendReq i t) -> do
             wm <- workMap <$> get @(WorkGroupState s ts)
@@ -263,7 +246,7 @@ instance (Algebra sig m, MonadIO m) => Algebra (Request s ts :+: sig) (RequestC 
                 (\_ ch -> liftIO $ atomically $ writeTChan ch (inject t))
                 wm
             pure ctx
-        L (ForkAWorker _ fun) -> do
+        R (L (CreateWorker fun)) -> do
             chan <- liftIO newTChanIO
             liftIO $ forkIO $ void $ fun chan
             state@WorkGroupState { workMap, counter } <-
@@ -272,19 +255,19 @@ instance (Algebra sig m, MonadIO m) => Algebra (Request s ts :+: sig) (RequestC 
                 newmap     = IntMap.insert counter (unsafeCoerce chan) workMap
             put state { workMap = newmap, counter = newcounter }
             pure ctx
-        L (RemoveChan i) -> do
+        R ((L (DeleteWorker i))) -> do
             state@WorkGroupState { workMap, counter } <-
                 get @(WorkGroupState s ts)
             put state { workMap = IntMap.delete i workMap }
             pure ctx
-        R signa -> alg (unRequestC . hdl) (R signa) ctx
+        R (R signa) -> alg (unRequestC . hdl) (R signa) ctx
 
 initWorkGroupState :: WorkGroupState s ts
 initWorkGroupState = WorkGroupState { workMap = IntMap.empty, counter = 0 }
 
 runWithWorkGroup
     :: forall serverName s ts m a
-     . Functor m
+     . MonadIO m
     => Labelled (serverName :: Symbol) (RequestC s ts) m a
     -> m a
 runWithWorkGroup f =
