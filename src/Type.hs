@@ -55,3 +55,5 @@ type family ElemO (name :: Symbol) (t :: Type) (ts :: [Type]) :: Constraint wher
 type family Elems (name :: Symbol) (ls :: [Type]) (ts :: [Type]) :: Constraint where
     Elems name (l ': ls) ts = (ElemO name l ts, Elems name ls ts)
     Elems name '[] ts = ()
+
+data Fork = Fork

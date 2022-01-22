@@ -66,7 +66,7 @@ import           Type                           ( Elem
                                                 , Sum
                                                 , ToList
                                                 , ToSig
-                                                , inject
+                                                , inject, Fork (Fork)
                                                 )
 import           Unsafe.Coerce                  ( unsafeCoerce )
 
@@ -84,7 +84,7 @@ data Request s ts m a where
     SendReq ::(ToSig t s) =>Int -> t -> Request s ts m ()
     SendAllCall ::(ToSig t s) => (MVar b -> t) -> Request s ts m [MVar b]
     SendAllCast ::(ToSig t s) => t -> Request s ts m ()
-    ForkAWorker ::(TChan (Some s) -> IO ()) -> Request s ts m ()
+    ForkAWorker ::(ToSig t s) => t -> (TChan (Some s) -> IO ()) -> Request s ts m ()
     RemoveChan ::Int -> Request s ts m ()
 
 sendReq
@@ -205,9 +205,22 @@ forkAwork
        , ToSig e s
        , HasLabelled serverName (Request s ts) sig m
        )
+    => e
+    -> (TChan (Some s) -> IO ())
+    -> m ()
+forkAwork e fun = sendLabelled @serverName (ForkAWorker e fun)
+
+forkAwork1
+    :: forall serverName s ts sig m
+     . ( MonadIO m
+       , Elem serverName Fork ts
+       , ToSig Fork s
+       , HasLabelled serverName (Request s ts) sig m
+       )
     => (TChan (Some s) -> IO ())
     -> m ()
-forkAwork fun = sendLabelled @serverName (ForkAWorker fun)
+forkAwork1 fun = sendLabelled @serverName (ForkAWorker Fork fun)
+
 
 removeChan
     :: forall serverName s ts sig m e b
@@ -250,7 +263,7 @@ instance (Algebra sig m, MonadIO m) => Algebra (Request s ts :+: sig) (RequestC 
                 (\_ ch -> liftIO $ atomically $ writeTChan ch (inject t))
                 wm
             pure ctx
-        L (ForkAWorker fun) -> do
+        L (ForkAWorker _ fun) -> do
             chan <- liftIO newTChanIO
             liftIO $ forkIO $ void $ fun chan
             state@WorkGroupState { workMap, counter } <-

@@ -72,16 +72,17 @@ manager
     => TChan (Some SigLog)
     -> m ()
 manager tc = do
-    -- let fun chan =
-    --         void
-    --             $ runReader (WorkEnv "nice" 1)
-    --             $ runWorkerWithChan @SigCom chan
-    --             $ runServerWithChan @SigLog tc
-    --             $ runMetric @WorkMetric
-    --             $ runMetric @LogMetric1
-    --             $ runError @Stop work
+    let fun chan =
+            void
+                $ runReader (WorkEnv "nice" 1)
+                $ runWorkerWithChan @SigCom chan
+                $ runServerWithChan @SigLog tc
+                $ runMetric @WorkMetric
+                $ runMetric @LogMetric1
+                $ runError @Stop work
 
-    forkAwork @"work" undefined  -- @"work" fun
+    forkAwork @"work" Stop fun  -- @"work" fun
+    -- forkAwork1 @"work" fun
 
     -- res <- callById @"work" 1 WorkInfo
     -- cast @"log" (Log L1 "manager" (show res))
