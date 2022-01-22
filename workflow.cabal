@@ -30,7 +30,6 @@ library
                     , Example.Example1.E1
                     , Example.Example1.E2
                     , Example.Example1.Type
-                    , Example.Chart.Type
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -42,6 +41,7 @@ library
                     , text 
                     , time 
                     , fused-effects
+                    , fused-effects-optics
                     , optics
                     , fused-effects-optics
                     , stm 

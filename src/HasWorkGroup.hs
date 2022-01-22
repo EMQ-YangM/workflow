@@ -13,6 +13,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module HasWorkGroup where
 import           Control.Carrier.Reader         ( Algebra
@@ -22,7 +23,9 @@ import           Control.Carrier.Reader         ( Algebra
                                                 , ask
                                                 , runReader
                                                 )
+import           Control.Carrier.State.Strict
 import           Control.Concurrent             ( MVar
+                                                , forkIO
                                                 , newEmptyMVar
                                                 , putMVar
                                                 , takeMVar
@@ -30,6 +33,7 @@ import           Control.Concurrent             ( MVar
 import           Control.Concurrent.STM         ( TChan
                                                 , atomically
                                                 , isEmptyTChan
+                                                , newTChanIO
                                                 , readTChan
                                                 , writeTChan
                                                 )
@@ -42,10 +46,12 @@ import           Control.Effect.Labelled        ( type (:+:)(..)
                                                 , runLabelled
                                                 , sendLabelled
                                                 )
+import           Control.Effect.Optics
 import           Control.Monad                  ( forM
                                                 , forM_
                                                 , forever
                                                 , replicateM
+                                                , void
                                                 )
 import           Control.Monad.IO.Class         ( MonadIO(..) )
 import           Data.IntMap                    ( IntMap )
@@ -53,6 +59,7 @@ import qualified Data.IntMap                   as IntMap
 import           Data.Kind                      ( Type )
 import           Data.Traversable               ( for )
 import           GHC.TypeLits                   ( Symbol )
+import           Optics                         ( makeLenses )
 import           Type                           ( Elem
                                                 , Elems
                                                 , Some(..)
@@ -77,6 +84,8 @@ data Request s ts m a where
     SendReq ::(ToSig t s) =>Int -> t -> Request s ts m ()
     SendAllCall ::(ToSig t s) => (MVar b -> t) -> Request s ts m [MVar b]
     SendAllCast ::(ToSig t s) => t -> Request s ts m ()
+    ForkAWorker ::(TChan (Some s) -> IO ()) -> Request s ts m ()
+    RemoveChan ::Int -> Request s ts m ()
 
 sendReq
     :: forall (serverName :: Symbol) s ts sig m t
@@ -181,43 +190,91 @@ mcast
     :: forall serverName s ts sig m e b
      . ( Elem serverName e ts
        , ToSig e s
+       , HasLabelled serverName (Request s ts) sig m
        , MonadIO m
-       , LabelledMember serverName (Request s ts) sig
-       , Algebra sig m
        )
     => [Int]
     -> e
     -> m ()
 mcast is f = mapM_ (\x -> castById @serverName x f) is
 
-newtype RequestC s ts m a = RequestC { unRequestC :: ReaderC (IntMap (TChan (Sum s ts))) m a }
+forkAwork
+    :: forall serverName s ts sig m e b
+     . ( MonadIO m
+       , Elem serverName e ts
+       , ToSig e s
+       , HasLabelled serverName (Request s ts) sig m
+       )
+    => (TChan (Some s) -> IO ())
+    -> m ()
+forkAwork fun = sendLabelled @serverName (ForkAWorker fun)
+
+removeChan
+    :: forall serverName s ts sig m e b
+     . ( MonadIO m
+       , LabelledMember serverName (Request s ts) sig
+       , Algebra sig m
+       )
+    => Int
+    -> m ()
+removeChan idx = sendLabelled @serverName (RemoveChan idx)
+
+data WorkGroupState s ts = WorkGroupState
+    { workMap :: IntMap (TChan (Sum s ts))
+    , counter :: Int
+    }
+
+newtype RequestC s ts m a = RequestC { unRequestC :: StateC (WorkGroupState s ts) m a }
   deriving (Functor, Applicative, Monad, MonadIO)
 
 instance (Algebra sig m, MonadIO m) => Algebra (Request s ts :+: sig) (RequestC s ts m) where
-    alg hdl sig ctx = RequestC $ ReaderC $ \c -> case sig of
+    alg hdl sig ctx = RequestC $ case sig of
         L (SendReq i t) -> do
-            case IntMap.lookup i c of
-                Nothing -> error "...."
+            wm <- workMap <$> get @(WorkGroupState s ts)
+            case IntMap.lookup i wm of
+                Nothing -> error "never happend.."
                 Just ch -> do
                     liftIO $ atomically $ writeTChan ch (inject t)
-                    pure ctx
+                    pure (() <$ ctx)
+
         L (SendAllCall t) -> do
-            mvs <- forM (IntMap.elems c) $ \ch -> do
+            wm  <- workMap <$> get @(WorkGroupState s ts)
+            mvs <- forM (IntMap.elems wm) $ \ch -> do
                 mv <- liftIO newEmptyMVar
                 liftIO $ atomically $ writeTChan ch (inject (t mv))
                 pure mv
             pure (mvs <$ ctx)
         L (SendAllCast t) -> do
+            wm <- workMap <$> get @(WorkGroupState s ts)
             IntMap.traverseWithKey
                 (\_ ch -> liftIO $ atomically $ writeTChan ch (inject t))
-                c
+                wm
             pure ctx
-        R signa -> alg (runReader c . unRequestC . hdl) signa ctx
+        L (ForkAWorker fun) -> do
+            chan <- liftIO newTChanIO
+            liftIO $ forkIO $ void $ fun chan
+            state@WorkGroupState { workMap, counter } <-
+                get @(WorkGroupState s ts)
+            let newcounter = counter + 1
+                newmap     = IntMap.insert counter (unsafeCoerce chan) workMap
+            put state { workMap = newmap, counter = newcounter }
+            pure ctx
+        L (RemoveChan i) -> do
+            state@WorkGroupState { workMap, counter } <-
+                get @(WorkGroupState s ts)
+            put state { workMap = IntMap.delete i workMap }
+            pure ctx
+        R signa -> alg (unRequestC . hdl) (R signa) ctx
+
+initWorkGroupState :: WorkGroupState s ts
+initWorkGroupState = WorkGroupState { workMap = IntMap.empty, counter = 0 }
 
 runWithWorkGroup
     :: forall serverName s ts m a
-     . [(Int, TChan (Some s))]
-    -> Labelled (serverName :: Symbol) (RequestC s ts) m a
+     . Functor m
+    => Labelled (serverName :: Symbol) (RequestC s ts) m a
     -> m a
-runWithWorkGroup chan f =
-    runReader (unsafeCoerce $ IntMap.fromList chan) $ unRequestC $ runLabelled f
+runWithWorkGroup f =
+    evalState @(WorkGroupState s ts) initWorkGroupState
+        $ unRequestC
+        $ runLabelled f

@@ -33,7 +33,6 @@ import           Metric
 import           System.Random
 import           Text.Read               hiding ( get )
 import           Util
-import Example.Example1.Type (VerifyToken(VerifyToken))
 
 
 client
@@ -114,7 +113,7 @@ client = do
             "getAllTokens" : _ -> do
                 v <- call @"auth" GetAllTokens
                 l4 $ show v
-            "deleteAllTokens" : token : _ -> do 
+            "deleteAllTokens" : token : _ -> do
                 v <- call @"auth" (DeleteAllTokens token)
                 l4 $ "delete all tokens " ++ show v
             _ -> do
@@ -387,18 +386,17 @@ runExample = do
         $ runMetric @AddMetric addServer
 
     -- run client, need Some, db, log, log1, add, auth server and w workGroup
-    forkIO
-        $ void
-        $ runWithServer @"Some" tc
-        $ runWithServer @"db" dbc
-        $ runWithServer @"log" tlc
-        $ runWithServer @"log1" tlc
-        $ runWithServer @"add" addc
-        $ runWithServer @"auth" authc
-        $ runMetric @ClientMetric
-        $ runWithWorkGroup @"w" [(1, a), (2, b), (3, c), (4, d), (5, e)]
-        $ runReader "client"
-        $ runError @Stop client
+    -- void
+    --     $ runWithServer @"Some" tc
+    --     $ runWithServer @"db" dbc
+    --     $ runWithServer @"log" tlc
+    --     $ runWithServer @"log1" tlc
+    --     $ runWithServer @"add" addc
+    --     $ runWithServer @"auth" authc
+    --     $ runMetric @ClientMetric
+    --     $ runWithWorkGroup @"w" [(1, a), (2, b), (3, c), (4, d), (5, e)]
+    --     $ runReader "client"
+    --     $ runError @Stop client
 
     forever $ do
         threadDelay 1000000
