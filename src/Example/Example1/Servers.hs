@@ -36,7 +36,7 @@ handCommand = \case
         throwError Stop
     SigCommand2 (Talk s) -> do
         name <- ask @Name
-        l4 $ ", talk " ++ s
+        l4 $ "talk " ++ s
 
 -- db server
 
@@ -57,7 +57,17 @@ dbServer
        )
     => m ()
 dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
-    handCommand
+    (\case
+        SigCommand1 (Finish tmv) -> do
+            name <- ask @Name
+            put @(Map Int String) Map.empty
+            liftIO $ putStrLn $ name ++ " server stop, delete all val"
+            resp tmv ()
+            throwError Stop
+        SigCommand2 (Talk s) -> do
+            name <- ask @Name
+            l4 $ "talk " ++ s
+    )
     (\case
         SigDB1 (WriteUser token k v) -> do
             vt <- call @"auth" $ VerifyToken token
