@@ -123,8 +123,8 @@ client = do
                 l4 $ "delete all tokens " ++ show v
             _ -> do
                 l1 "writeDB"
-                idx   <- liftIO randomIO
-                val   <- liftIO $ replicateM 4 randomIO
+                idx   <- liftIO $ randomRIO (0, 100000)
+                val   <- liftIO $ replicateM 4 $ randomRIO ('a', 'z')
                 token <- call @"auth" GetToken
                 cast @"db" (WriteUser token idx val)
                 val <- call @"db" (GetUser idx)
@@ -162,7 +162,7 @@ example = do
     createWorker @SigCommand $ auth
 
     -- - fork db server, need log, auth server
-    let db comm =
+    let db name comm =
             void
                 $ runWorkerWithChan comm
                 $ runServerWithChan dbChan
@@ -170,12 +170,13 @@ example = do
                 $ runWithServer @"log" logChan
                 $ runWithServer @"auth" authChan
                 -----------------
-                $ runReader "db"
+                $ runReader name
                 $ runMetric @DBmetric
                 $ runError @Stop
                 $ runState @(Map Int String) Map.empty dbServer
 
-    createWorker @SigCommand db
+    -- forM_ [1 .. 10] $ \i -> createWorker @SigCommand $ db ("db" ++ show i)
+    createWorker @SigCommand $ db "db"
 
     --- fork log server, need auth server
     let log comm =

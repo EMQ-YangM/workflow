@@ -84,7 +84,7 @@ instance Show Level where
     L4 -> "👾"
 
 instance Show Log where
-  show (Log l name s) = show l ++ " " ++ name ++ " " ++ s
+  show (Log l name s) = show l ++ " " ++ name ++ ":" ++ s
 
 newtype P = P Int 
 data SetLevel = SetLevel Token Level (MVar ())

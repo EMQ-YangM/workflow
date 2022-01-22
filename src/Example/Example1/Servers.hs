@@ -60,8 +60,13 @@ dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
     (\case
         SigCommand1 (Finish tmv) -> do
             name <- ask @Name
+            m    <- get @(Map Int String)
             put @(Map Int String) Map.empty
-            liftIO $ putStrLn $ name ++ " server stop, delete all val"
+            liftIO
+                $  putStrLn
+                $  name
+                ++ " server stop, delete all val: "
+                ++ show m
             resp tmv ()
             throwError Stop
         SigCommand2 (Talk s) -> do
