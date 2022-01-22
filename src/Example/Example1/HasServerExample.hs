@@ -78,8 +78,8 @@ client = do
                         call @"log1" $ SetLevel token le
             "finish" : _ -> do
                 l4 "finish all"
-                liftIO $ threadDelay 100000
                 callAll @"work" Finish
+                liftIO $ threadDelay 100000
                 throwError Stop
             "castAll" : s -> do
                 castAll @"work" (Talk (concat s))
@@ -146,8 +146,18 @@ example = do
     addChan  <- liftIO $ newMessageChan @SigAdd
     authChan <- liftIO $ newMessageChan @SigAuth
 
+    -- fork addServer server, need log server
+    let add comm =
+            void
+                $ runWorkerWithChan comm
+                $ runServerWithChan addChan
+                -----------------
+                $ runWithServer @"log" logChan
+                -----------------
+                $ runReader "add"
+                $ runError @Stop
+                $ runMetric @AddMetric addServer
 
-    --- fork auth server, need log server
     let auth comm =
             void @IO
                 $ runWorkerWithChan comm
@@ -159,9 +169,6 @@ example = do
                 $ runState @[String] []
                 $ runError @Stop authServer
 
-    createWorker @SigCommand $ auth
-
-    -- - fork db server, need log, auth server
     let db name comm =
             void
                 $ runWorkerWithChan comm
@@ -175,10 +182,6 @@ example = do
                 $ runError @Stop
                 $ runState @(Map Int String) Map.empty dbServer
 
-    -- forM_ [1 .. 10] $ \i -> createWorker @SigCommand $ db ("db" ++ show i)
-    createWorker @SigCommand $ db "db"
-
-    --- fork log server, need auth server
     let log comm =
             void
                 $ runWorkerWithChan comm
@@ -191,22 +194,69 @@ example = do
                 $ runError @Stop
                 $ runState L1
                 $ runMetric @LogMetric logServer
-
-    createWorker @SigCommand log
-
-    -- fork addServer server, need log server
-    let add comm =
-            void
-                $ runWorkerWithChan comm
-                $ runServerWithChan addChan
-                -----------------
-                $ runWithServer @"log" logChan
-                -----------------
-                $ runReader "add"
-                $ runError @Stop
-                $ runMetric @AddMetric addServer
-
+    -- fork add server
     createWorker @SigCommand add
+    -- fork work1
+    createWorker $ \chan ->
+        liftIO
+            $ void
+            $ runWorkerWithChan @SigCommand chan
+            $ runWithWorkGroup @"work1" @SigCommand @'[Talk , Finish]
+            $ runWithServer @"log" @SigLog @'[Log] logChan
+            $ runError @Stop
+            $ runReader "work1"
+            $ do
+                   --- fork auth server, need log server
+                  createWorker @SigCommand $ auth
+                  -- - fork db server, need log, auth server
+                  createWorker @SigCommand $ db "db"
+                  -- fork work2
+                  createWorker @SigCommand $ \chan ->
+                      liftIO
+                          $ void
+                          $ runWorkerWithChan @SigCommand chan
+                          $ runWithWorkGroup @"work2" @SigCommand
+                            @'[Talk , Finish]
+                          $ runWithServer @"log" @SigLog @'[Log] logChan
+                          $ runError @Stop
+                          $ runReader "work2"
+                          $ do
+                                --- fork log server, need auth server
+                                createWorker @SigCommand log
+                                forever $ withMessageChan @SigCommand
+                                    (\case
+                                        SigCommand1 (Finish tmv) -> do
+                                            name <- ask @Name
+                                            liftIO $ threadDelay 100000
+                                            callAll @"work2" Finish
+                                            resp tmv ()
+                                            liftIO
+                                                $  putStrLn
+                                                $  name
+                                                ++ " server stop"
+                                            l4 "finish all"
+                                            throwError Stop
+                                        SigCommand2 (Talk s) -> do
+                                            name <- ask @Name
+                                            l4 $ "talk " ++ s
+                                            castAll @"work2" (Talk "ready!")
+                                    )
+
+                  forever $ withMessageChan @SigCommand
+                      (\case
+                          SigCommand1 (Finish tmv) -> do
+                              name <- ask @Name
+                              liftIO $ threadDelay 100000
+                              callAll @"work1" Finish
+                              resp tmv ()
+                              liftIO $ putStrLn $ name ++ " server stop"
+                              l4 "finish all"
+                              throwError Stop
+                          SigCommand2 (Talk s) -> do
+                              name <- ask @Name
+                              l4 $ "talk " ++ s
+                              castAll @"work1" (Talk "ready!")
+                      )
 
     -- run client, need db, log, log1, add, auth server and w workGroup
     void

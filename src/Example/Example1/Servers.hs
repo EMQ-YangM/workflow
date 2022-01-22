@@ -4,11 +4,13 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 module Example.Example1.Servers where
 import           Control.Algebra
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
+import           Control.Concurrent.STM
 import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.IntMap                   as IntMap
@@ -17,8 +19,10 @@ import qualified Data.Map                      as Map
 import           Data.Proxy
 import           Example.Example1.Type
 import           HasServer
+import           HasWorkGroup
 import           Metric
 import           System.Random
+import           Type
 import           Util
 
 handCommand
@@ -31,8 +35,8 @@ handCommand
 handCommand = \case
     SigCommand1 (Finish tmv) -> do
         name <- ask @Name
-        liftIO $ putStrLn $ name ++ " server stop"
         resp tmv ()
+        liftIO $ putStrLn $ name ++ " server stop"
         throwError Stop
     SigCommand2 (Talk s) -> do
         name <- ask @Name
