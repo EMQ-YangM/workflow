@@ -207,9 +207,12 @@ example = do
             $ runReader "work1"
             $ do
                    --- fork auth server, need log server
+                  l4 "create auth"
                   createWorker @SigCommand $ auth
+                  l4 "create db"
                   -- - fork db server, need log, auth server
                   createWorker @SigCommand $ db "db"
+                  l4 "create work2"
                   -- fork work2
                   createWorker @SigCommand $ \chan ->
                       liftIO
@@ -221,6 +224,7 @@ example = do
                           $ runError @Stop
                           $ runReader "work2"
                           $ do
+                                l4 "create log"
                                 --- fork log server, need auth server
                                 createWorker @SigCommand log
                                 forever $ withMessageChan @SigCommand
