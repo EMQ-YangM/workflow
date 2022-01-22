@@ -4,6 +4,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Util where
 import           Control.Algebra
 import           Control.Carrier.Reader         ( Has
@@ -23,7 +24,10 @@ import           Control.Concurrent.STM         ( STM
                                                 , orElse
                                                 , readTChan
                                                 )
+import           Control.Monad
 import           Control.Monad.IO.Class         ( MonadIO(..) )
+import           HasServer
+import           HasWorkGroup
 import           Type                           ( Some(..) )
 
 type MessageChan f = Reader (TChan (Some f))
@@ -99,3 +103,16 @@ withThreeMessageChan f1 f2 f3 = do
 
 newMessageChan :: forall f . IO (TChan (Some f))
 newMessageChan = newTChanIO
+
+inputOutput
+    :: forall input workName s ts sig m
+     . ( Has (MessageChan input) sig m
+       , HasWorkGroup workName s ts sig m
+       , MonadIO m
+       )
+    => m ()
+    -> (forall s . input s -> m ())
+    -> m ()
+inputOutput fun fun1 = do
+    fun
+    forever $ withMessageChan @input fun1
