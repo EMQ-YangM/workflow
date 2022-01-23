@@ -121,12 +121,11 @@ client = do
             "deleteAllTokens" : token : _ -> do
                 v <- call @"auth" (DeleteAllTokens token)
                 l4 $ "delete all tokens " ++ show v
-            _ -> do
+            s -> do
                 l1 "writeDB"
                 idx   <- liftIO $ randomRIO (0, 100000)
-                val   <- liftIO $ replicateM 4 $ randomRIO ('a', 'z')
                 token <- call @"auth" GetToken
-                cast @"db" (WriteUser token idx val)
+                cast @"db" (WriteUser token idx (concat s))
                 val <- call @"db" (GetUser idx)
                 l2 $ "readDB result is: " ++ show val
 

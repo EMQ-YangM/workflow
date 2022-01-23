@@ -95,7 +95,7 @@ dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
             v <- gets @(Map Int String) Map.size
             resp tmv v
         SigDB5 (GetAllUser tmv) -> do
-            v <- gets @(Map Int String) Map.keys
+            v <- gets @(Map Int String) Map.toList
             resp tmv v
         SigDB6 (DeleteAll token tmv) -> do
             vt <- call @"auth" $ VerifyToken token
@@ -117,7 +117,7 @@ logServer
        ------------------------
        , HasServer "log" SigLog '[Log] sig m
        , HasServer "auth" SigAuth '[VerifyToken] sig m
-       
+
        , Has (    Metric LogMetric
               :+: Error Stop
               :+: Reader Name

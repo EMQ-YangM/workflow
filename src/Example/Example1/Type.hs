@@ -26,7 +26,7 @@ data DeleteAllTokens = DeleteAllTokens Token (MVar Bool)
 data WriteUser = WriteUser Token Int String
 data GetUser = GetUser Int (MVar (Maybe String))
 newtype GetDBSize = GetDBSize (MVar Int)
-newtype GetAllUser = GetAllUser (MVar [Int])
+newtype GetAllUser = GetAllUser (MVar [(Int, String)])
 data DeleteAll where
    DeleteAll :: Token -> MVar Int -> DeleteAll
 
