@@ -1,11 +1,10 @@
-{-# LANGUAGE GADTs, TemplateHaskell #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -78,8 +77,9 @@ client = do
                         call @"log1" $ SetLevel token le
             "finish" : _ -> do
                 l4 "finish all"
-                callAll @"work" Finish
                 liftIO $ threadDelay 100000
+                callAll @"work" Finish
+                liftIO $ putStrLn "sup-client server stop"
                 throwError Stop
             "castAll" : s -> do
                 castAll @"work" (Talk (concat s))
@@ -135,11 +135,8 @@ client = do
 
 ---- DB server
 
----- 
-example
-    :: (HasWorkGroup "work" SigCommand '[Finish , Talk] sig m, MonadIO m)
-    => m ()
-example = do
+runExample :: IO ()
+runExample = void $ runWithWorkGroup @"work" @SigCommand @'[Finish , Talk] $ do
 
     dbChan   <- liftIO $ newMessageChan @SigDB
     logChan  <- liftIO $ newMessageChan @SigLog
@@ -243,7 +240,7 @@ example = do
                                         SigCommand2 (Talk s) -> do
                                             name <- ask @Name
                                             l4 $ "talk " ++ s
-                                            castAll @"work2" (Talk "ready!")
+                                            castAll @"work2" (Talk s)
                                     )
 
                   forever $ withMessageChan @SigCommand
@@ -259,7 +256,7 @@ example = do
                           SigCommand2 (Talk s) -> do
                               name <- ask @Name
                               l4 $ "talk " ++ s
-                              castAll @"work1" (Talk "ready!")
+                              castAll @"work1" (Talk s)
                       )
 
     -- run client, need db, log, log1, add, auth server and w workGroup
@@ -273,8 +270,3 @@ example = do
         $ runReader "client"
         $ runMetric @ClientMetric
         $ runError @Stop client
-
-
-runExample :: IO ()
-runExample = void $ runWithWorkGroup @"work" example
-

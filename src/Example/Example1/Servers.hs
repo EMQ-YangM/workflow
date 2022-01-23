@@ -40,17 +40,18 @@ handCommand = \case
         throwError Stop
     SigCommand2 (Talk s) -> do
         name <- ask @Name
-        l4 $ "talk " ++ s
+        l3 $ "talk " ++ s
 
 -- db server
 
 dbServer
-    :: ( HasServer "log" SigLog '[Log] sig m
+    :: ( Has (MessageChan SigDB :+: MessageChan SigCommand) sig m
+       ------------------------
+       , HasServer "log" SigLog '[Log] sig m
        , HasServer "auth" SigAuth '[VerifyToken] sig m
+       ------------------------
        , Has
-             (MessageChan SigDB
-             :+: MessageChan SigCommand
-             :+: State (Map Int String)
+             (   State (Map Int String)
              :+: Metric DBmetric
              :+: Error Stop
              :+: Reader Name
@@ -66,16 +67,12 @@ dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
             name <- ask @Name
             m    <- get @(Map Int String)
             put @(Map Int String) Map.empty
-            liftIO
-                $  putStrLn
-                $  name
-                ++ " server stop, delete all val: "
-                ++ show m
+            liftIO $ putStrLn $ name ++ " server stop"
             resp tmv ()
             throwError Stop
         SigCommand2 (Talk s) -> do
             name <- ask @Name
-            l4 $ "talk " ++ s
+            l3 $ "talk " ++ s
     )
     (\case
         SigDB1 (WriteUser token k v) -> do
@@ -116,14 +113,15 @@ dbServer = forever $ withTwoMessageChan @SigCommand @SigDB
 --- log server 
 
 logServer
-    :: ( HasServer "log" SigLog '[Log] sig m
+    :: ( Has (MessageChan SigLog :+: MessageChan SigCommand) sig m
+       ------------------------
+       , HasServer "log" SigLog '[Log] sig m
        , HasServer "auth" SigAuth '[VerifyToken] sig m
-       , Has (MessageChan SigLog
-            :+: MessageChan SigCommand
-            :+: Metric LogMetric
-            :+: Error Stop
-            :+: Reader Name
-            :+: State Level
+       
+       , Has (    Metric LogMetric
+              :+: Error Stop
+              :+: Reader Name
+              :+: State Level
             )
             sig
             m
