@@ -17,9 +17,9 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Proxy
 import           Example.Example1.Type
-import           HasServer
-import           Metric
-import           Util
+import           Process.HasServer
+import           Process.Metric
+import           Process.Util
 
 client
     :: ( HasServer "log" SigLog '[Log , Allmetric , P , SetLevel] sig m

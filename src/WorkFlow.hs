@@ -37,13 +37,13 @@ import           Data.IntMap                    ( IntMap )
 import           Data.Kind
 import           Data.Traversable               ( for )
 import           Data.Void
-import           Metric
+import           Process.Metric
 import           Optics                         ( (^.)
                                                 , makeLenses
                                                 )
 import           System.Random
 import           System.Timeout                 ( timeout )
-import           TH
+import           Process.TH
 
 type Counter = IORef Int
 

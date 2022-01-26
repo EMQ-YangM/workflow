@@ -6,9 +6,9 @@
 module Example.Example1.Type where
 
 import           Control.Concurrent
-import           Metric
-import           TH
-import           Type
+import           Process.Metric
+import           Process.TH
+import           Process.Type
 
 data Message1  where
      Message1 ::String -> MVar String -> Message1

@@ -19,11 +19,11 @@ import           Control.Monad.IO.Class
 import           Data.Foldable                  ( for_ )
 import           Data.Proxy
 import           Example.Example1.Type
-import           HasServer
-import           HasWorkGroup
-import           Metric
-import           Type
-import           Util
+import           Process.HasServer
+import           Process.HasWorkGroup
+import           Process.Metric
+import           Process.Type
+import           Process.Util
 
 work
     :: ( Has

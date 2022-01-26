@@ -18,12 +18,12 @@ import           Data.Map
 import qualified Data.Map                      as Map
 import           Data.Proxy
 import           Example.Example1.Type
-import           HasServer
-import           HasWorkGroup
-import           Metric
+import           Process.HasServer
+import           Process.HasWorkGroup
+import           Process.Metric
 import           System.Random
-import           Type
-import           Util
+import           Process.Type
+import           Process.Util
 
 handCommand
     :: ( HasServer "log" SigLog '[Log] sig m

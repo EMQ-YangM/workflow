@@ -27,12 +27,12 @@ import qualified Data.Map                      as Map
 import           Data.Proxy
 import           Example.Example1.Servers
 import           Example.Example1.Type
-import           HasServer
-import           HasWorkGroup
-import           Metric
+import           Process.HasServer
+import           Process.HasWorkGroup
+import           Process.Metric
 import           System.Random
 import           Text.Read               hiding ( get )
-import           Util
+import           Process.Util
 
 
 client

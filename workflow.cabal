@@ -20,12 +20,6 @@ extra-source-files: CHANGELOG.md
 
 library
     exposed-modules:  WorkFlow
-                    , Metric
-                    , HasServer
-                    , HasWorkGroup
-                    , TH
-                    , Type
-                    , Util
                     , Example.Example1.HasServerExample
                     , Example.Example1.E1
                     , Example.Example1.E2
@@ -43,8 +37,8 @@ library
                     , time 
                     , fused-effects
                     , fused-effects-optics
+                    , fused-effects-process
                     , optics
-                    , fused-effects-optics
                     , stm 
                     , containers
                     , vector
